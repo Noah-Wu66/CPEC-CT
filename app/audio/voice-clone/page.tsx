@@ -9,9 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AUDIO_LANGUAGE_OPTIONS } from '@/lib/audio/client/format';
-import { OTHER_MODELS, PRIMARY_MODELS } from '@/lib/audio/client/tts-options';
-
-const MODELS = [...PRIMARY_MODELS, ...OTHER_MODELS];
+import { PRIMARY_MODELS } from '@/lib/audio/client/tts-options';
 
 export default function VoiceClonePage() {
   const router = useRouter();
@@ -208,7 +206,7 @@ export default function VoiceClonePage() {
             <div className="space-y-2">
               <Label htmlFor="model">模型选择</Label>
               <div className="grid gap-3 sm:grid-cols-2">
-                {MODELS.map(model => (
+                {PRIMARY_MODELS.map(model => (
                   <label
                     key={model.id}
                     className={`flex cursor-pointer flex-col rounded-[var(--radius-md)] border p-4 transition-colors ${

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/audio/auth/session';
 import { minimaxAPI } from '@/lib/audio/minimax/client';
 import { getAudioMimeType, normalizeAudioForStorage, saveAudioBuffer } from '@/lib/audio/storage';
+import { isLatestSpeechModel } from '@/lib/audio/client/tts-options';
 import { logError } from '@/lib/logger';
 
 const SUPPORTED_SYNC_AUDIO_FORMATS = ['mp3', 'flac', 'wav'] as const;
@@ -37,6 +38,13 @@ export async function POST(request: NextRequest) {
     if (!text || !model) {
       return NextResponse.json(
         { success: false, message: '缺少必要参数' },
+        { status: 400 }
+      );
+    }
+
+    if (!isLatestSpeechModel(model)) {
+      return NextResponse.json(
+        { success: false, message: '仅支持最新版 MiniMax Speech 模型' },
         { status: 400 }
       );
     }

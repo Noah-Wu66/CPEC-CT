@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 import type { AsyncAudioFormat, AsyncTTSFormState, VoiceItem } from '@/types/audio/tts';
-import { LANGUAGES, OTHER_MODELS, PRIMARY_MODELS } from '@/lib/audio/client/tts-options';
+import { LANGUAGES, PRIMARY_MODELS } from '@/lib/audio/client/tts-options';
 
 export function AsyncFields(props: {
   voices: VoiceItem[];
@@ -102,30 +102,6 @@ export function AsyncFields(props: {
                 </label>
               ))}
             </div>
-            <details className="mt-2 rounded-[var(--radius-md)] border border-border/80 bg-secondary/40 p-3">
-              <summary className="cursor-pointer text-sm font-bold">其他模型</summary>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {OTHER_MODELS.map((m) => (
-                  <label
-                    key={m.id}
-                    className={`flex cursor-pointer flex-col rounded-[var(--radius-md)] border p-4 transition-colors ${
-                      form.model === m.id ? 'border-[var(--audio-green)] bg-[var(--soft-green)]' : 'border-[var(--oa-card-border)] bg-[var(--oa-card-bg)] hover:bg-[var(--oa-paper-soft)]'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="async-model"
-                      value={m.id}
-                      checked={form.model === m.id}
-                      onChange={(e) => setForm({ ...form, model: e.target.value })}
-                      className="sr-only"
-                    />
-                    <span className="font-medium">{m.name}</span>
-                    <span className="text-xs text-muted-foreground mt-1">{m.description}</span>
-                  </label>
-                ))}
-              </div>
-            </details>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">

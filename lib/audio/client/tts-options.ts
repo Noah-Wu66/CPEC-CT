@@ -3,12 +3,11 @@ export const PRIMARY_MODELS = [
   { id: 'speech-2.8-turbo', name: 'Speech 2.8 Turbo', description: '官方最新高速模型，生成更快' },
 ] as const;
 
-export const OTHER_MODELS = [
-  { id: 'speech-2.6-hd', name: 'Speech 2.6 HD', description: '实时表现稳定，适合继续沿用旧项目参数' },
-  { id: 'speech-2.6-turbo', name: 'Speech 2.6 Turbo', description: '速度更快，适合追求成本和效率' },
-  { id: 'speech-02-hd', name: 'Speech 02 HD', description: '更强节奏与稳定性，高相似度与音质' },
-  { id: 'speech-02-turbo', name: 'Speech 02 Turbo', description: '多语言能力更强，整体更稳定' },
-] as const;
+export const LATEST_SPEECH_MODEL_IDS = PRIMARY_MODELS.map((model) => model.id);
+
+export function isLatestSpeechModel(model: unknown): model is typeof LATEST_SPEECH_MODEL_IDS[number] {
+  return typeof model === 'string' && LATEST_SPEECH_MODEL_IDS.includes(model as typeof LATEST_SPEECH_MODEL_IDS[number]);
+}
 
 export const LANGUAGES = [
   { code: 'auto', name: '自动识别' },

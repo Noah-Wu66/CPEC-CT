@@ -3,6 +3,7 @@ import { getSession } from '@/lib/audio/auth/session';
 import { minimaxAPI } from '@/lib/audio/minimax/client';
 import { VoiceRepository } from '@/lib/audio/mongodb/repositories';
 import { normalizeAudioForStorage } from '@/lib/audio/storage';
+import { isLatestSpeechModel } from '@/lib/audio/client/tts-options';
 import { logError } from '@/lib/logger';
 
 interface ClonePrompt {
@@ -47,6 +48,13 @@ export async function POST(request: NextRequest) {
     if (!sourceFileId || !voiceId || !name || !model) {
       return NextResponse.json(
         { success: false, message: '缺少必要参数' },
+        { status: 400 }
+      );
+    }
+
+    if (!isLatestSpeechModel(model)) {
+      return NextResponse.json(
+        { success: false, message: '仅支持最新版 MiniMax Speech 模型' },
         { status: 400 }
       );
     }
