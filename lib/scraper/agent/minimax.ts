@@ -4,6 +4,7 @@ import {
   buildMinimaxThinking,
   createMinimaxAnthropicHeaders,
   getAnthropicTextFromContent,
+  getMinimaxMaxTokens,
   normalizeAnthropicJsonSchema,
   readAnthropicErrorMessage
 } from "@/lib/ai/server/minimax/anthropic";
@@ -136,13 +137,12 @@ export async function callMinimaxAgent(input: {
 }) {
   const messages = agentContentsToAnthropicMessages(input.contents);
   const tools = agentToolsToAnthropicTools(input.tools);
-  const maxTokens = 8192;
   const temperature = (input.generationConfig as { temperature?: number } | undefined)?.temperature;
 
   const requestBody: Record<string, unknown> = {
     model: input.model,
     messages,
-    max_tokens: maxTokens,
+    max_tokens: getMinimaxMaxTokens(),
     thinking: buildMinimaxThinking(),
     temperature: typeof temperature === "number" ? temperature : 1
   };

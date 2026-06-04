@@ -60,7 +60,6 @@ export async function POST(request: NextRequest) {
 
     const resultText = await requestMinimaxCompletion({
       prompt,
-      maxTokens: 8192,
       signal: request?.signal,
     });
 

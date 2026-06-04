@@ -83,7 +83,6 @@ export async function POST(req) {
         const summary = await requestMinimaxCompletion({
             system: systemPrompt,
             prompt: `请将以下对话历史压缩成一份摘要：\n\n${conversationText}`,
-            maxTokens: 8192,
             signal: req?.signal,
         });
 

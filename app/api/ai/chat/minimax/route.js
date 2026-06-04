@@ -3,7 +3,6 @@ import { ConversationStore as Conversation, UserStore as User } from '@/lib/ai/s
 import { getAuthPayload } from '@/lib/ai/auth';
 import { rateLimit, getClientIP } from '@/lib/ai/rateLimit';
 import {
-    getDefaultMaxTokensForModel,
     getModelConfig,
     isMinimaxModel,
 } from '@/lib/ai/shared/models';
@@ -26,8 +25,6 @@ import {
 import { prepareDocumentAttachmentMapByUrls } from '@/lib/ai/server/files/service';
 import { buildDirectChatSystemPrompt } from '@/lib/ai/server/chat/systemPromptBuilder';
 import {
-    clampMaxTokens,
-    parseMaxTokens,
     parseSystemPrompt,
     parseWebSearchConfig,
     parseWebSearchEnabled,
@@ -37,7 +34,7 @@ import {
     MINIMAX_ANTHROPIC_MESSAGES_PATH,
     buildMinimaxThinking,
     createMinimaxAnthropicHeaders,
-    normalizeMinimaxMaxTokens,
+    getMinimaxMaxTokens,
     readAnthropicErrorMessage,
 } from '@/lib/ai/server/minimax/anthropic';
 import {
@@ -54,8 +51,6 @@ import { logError } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const MINIMAX_MAX_TOKEN_CAP = 524288;
 
 export async function POST(req) {
     let writePermitTime = null;
@@ -190,16 +185,7 @@ export async function POST(req) {
             minimaxMessages = await buildMinimaxMessagesFromHistory(effectiveHistory, { fileTextMap });
         }
 
-        // 解析参数（默认使用最优推理强度与较大输出）
-        const modelConfig = getModelConfig(model);
-        const supportsMaxTokensControl = modelConfig?.supportsMaxTokensControl === true;
-        let maxTokens;
-        try {
-            maxTokens = supportsMaxTokensControl ? parseMaxTokens(config?.maxTokens) : getDefaultMaxTokensForModel(model);
-        } catch (error) {
-            return Response.json({ error: error?.message || '配置无效' }, { status: 400 });
-        }
-        const normalizedMaxTokens = normalizeMinimaxMaxTokens(clampMaxTokens(maxTokens, MINIMAX_MAX_TOKEN_CAP), 8192);
+        const maxTokens = getMinimaxMaxTokens();
 
         const userSystemPrompt = parseSystemPrompt(config?.systemPrompt);
         const systemPromptSuffix = parseSystemPrompt(config?.systemPromptSuffix);
@@ -341,7 +327,7 @@ export async function POST(req) {
                         model: apiModel,
                         ...(isNonEmptyString(systemPrompt) ? { system: systemPrompt } : {}),
                         messages: minimaxMessages,
-                        max_tokens: normalizedMaxTokens,
+                        max_tokens: maxTokens,
                         stream: true,
                         thinking: buildMinimaxThinking(),
                         temperature: 1,
