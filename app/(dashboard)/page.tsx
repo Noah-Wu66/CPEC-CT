@@ -35,7 +35,7 @@ export default async function DashboardPage() {
     {
       href: "/ai",
       title: "人工智能",
-      description: "MiniMax-M3 对话、文件理解、联网搜索与 image-01 图像生成。",
+      description: "Qwen 对话、文件理解、联网搜索与 Wan 图像生成。",
       icon: <Sparkles className="h-5 w-5" />,
       tone: "plum",
       stats: [
@@ -74,7 +74,7 @@ export default async function DashboardPage() {
         <MetricCard
           label="对话模型"
           value={chatModelCount}
-          description="MiniMax-M3 · 官方国内版平台"
+          description="Qwen 3.7 Plus · 百炼新加坡端点"
           icon={<Sparkles className="h-5 w-5" />}
           tone="plum"
         />

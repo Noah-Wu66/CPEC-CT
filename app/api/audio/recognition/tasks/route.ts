@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/audio/auth/session';
-import { createRecognitionTask, isVolcengineAsrError } from '@/lib/audio/volcengine/asr';
+import { createRecognitionTask, isBailianAsrError } from '@/lib/audio/bailian/asr';
 import { isPrivateBlobUrl } from '@/lib/audio/storage';
 import { buildSignedDownloadUrl } from '@/lib/audio/blob';
 import { saveSubtitleSentences } from '@/lib/audio/subtitle/storage';
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     logError('audio.recognition', 'create recognition task', error);
 
-    if (isVolcengineAsrError(error)) {
+    if (isBailianAsrError(error)) {
       return NextResponse.json(
         { success: false, message: error.message },
         { status: error.status }

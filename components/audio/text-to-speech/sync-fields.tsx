@@ -3,26 +3,34 @@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-
 import type { SyncAudioFormat, SyncTTSFormState, VoiceItem } from '@/types/audio/tts';
-import { PRIMARY_MODELS } from '@/lib/audio/client/tts-options';
+import { LANGUAGES, PRIMARY_MODELS, SYSTEM_VOICES } from '@/lib/audio/client/tts-options';
 
 export function SyncFields(props: {
   voices: VoiceItem[];
   loadingVoices: boolean;
   form: SyncTTSFormState;
   setForm: (next: SyncTTSFormState) => void;
-  isAsync: boolean;
-  onToggleAsync: (checked: boolean) => void;
 }) {
-  const { voices, loadingVoices, form, setForm, isAsync, onToggleAsync } = props;
+  const { voices, loadingVoices, form, setForm } = props;
+  const selectableVoices = [
+    ...SYSTEM_VOICES.map((voice) => ({
+      id: voice.id,
+      voiceId: voice.id,
+      name: voice.name,
+      language: 'system',
+      model: '',
+      createdAt: '',
+    })),
+    ...voices,
+  ];
 
   return (
     <>
       <Card>
         <CardHeader>
           <CardTitle>文本输入</CardTitle>
-          <CardDescription>输入您要转换为语音的文本内容（≤10000字符）</CardDescription>
+          <CardDescription>输入您要转换为语音的文本内容</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -32,42 +40,28 @@ export function SyncFields(props: {
               placeholder="请输入要转换的文本..."
               value={form.text}
               onChange={(e) => setForm({ ...form, text: e.target.value })}
-              className="flex min-h-[170px] w-full px-3 py-2 text-sm"
+              className="flex min-h-[190px] w-full px-3 py-2 text-sm"
               required
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              id="tts-async-toggle"
-              type="checkbox"
-              checked={isAsync}
-              onChange={(e) => onToggleAsync(e.target.checked)}
-              className="h-4 w-4 accent-[var(--audio-green)]"
-            />
-            <Label htmlFor="tts-async-toggle">切换为长篇幅模式（支持更长文本，处理时间稍长）</Label>
-          </div>
-
           <div className="space-y-2">
-            <Label htmlFor="sync-voiceId">音色（可选）</Label>
+            <Label htmlFor="sync-voiceId">音色</Label>
             {loadingVoices ? (
               <Input disabled placeholder="加载声音列表中..." />
-            ) : voices.length > 0 ? (
+            ) : (
               <select
                 id="sync-voiceId"
                 value={form.voiceId}
                 onChange={(e) => setForm({ ...form, voiceId: e.target.value })}
                 className="flex h-10 w-full px-3 py-2 text-sm"
               >
-                <option value="">使用默认音色</option>
-                {voices.map((v) => (
-                  <option key={v.id} value={v.voiceId}>
-                    {v.name} ({v.language})
+                {selectableVoices.map((voice) => (
+                  <option key={voice.id} value={voice.voiceId}>
+                    {voice.language && voice.language !== 'system' ? `${voice.name} (${voice.language})` : voice.name}
                   </option>
                 ))}
               </select>
-            ) : (
-              <Input disabled placeholder="暂无自定义音色" />
             )}
           </div>
         </CardContent>
@@ -76,29 +70,29 @@ export function SyncFields(props: {
       <Card>
         <CardHeader>
           <CardTitle>生成设置</CardTitle>
-          <CardDescription>调整语音效果的常用参数</CardDescription>
+          <CardDescription>选择百炼语音模型和输出格式</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label>模型</Label>
             <div className="grid gap-3 sm:grid-cols-2">
-              {PRIMARY_MODELS.map((m) => (
+              {PRIMARY_MODELS.map((model) => (
                 <label
-                  key={m.id}
+                  key={model.id}
                   className={`flex cursor-pointer flex-col rounded-[var(--radius-md)] border p-4 transition-colors ${
-                    form.model === m.id ? 'border-[var(--audio-green)] bg-[var(--soft-green)]' : 'border-[var(--oa-card-border)] bg-[var(--oa-card-bg)] hover:bg-[var(--oa-paper-soft)]'
+                    form.model === model.id ? 'border-[var(--audio-green)] bg-[var(--soft-green)]' : 'border-[var(--oa-card-border)] bg-[var(--oa-card-bg)] hover:bg-[var(--oa-paper-soft)]'
                   }`}
                 >
                   <input
                     type="radio"
                     name="sync-model"
-                    value={m.id}
-                    checked={form.model === m.id}
+                    value={model.id}
+                    checked={form.model === model.id}
                     onChange={(e) => setForm({ ...form, model: e.target.value })}
                     className="sr-only"
                   />
-                  <span className="font-medium">{m.name}</span>
-                  <span className="text-xs text-muted-foreground mt-1">{m.description}</span>
+                  <span className="font-medium">{model.name}</span>
+                  <span className="text-xs text-muted-foreground mt-1">{model.description}</span>
                 </label>
               ))}
             </div>
@@ -106,35 +100,21 @@ export function SyncFields(props: {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="sync-speed">语速</Label>
-              <Input
-                id="sync-speed"
-                type="number"
-                step="0.1"
-                value={form.speed}
-                onChange={(e) => setForm({ ...form, speed: Number(e.target.value) })}
-              />
+              <Label htmlFor="sync-language">语言</Label>
+              <select
+                id="sync-language"
+                value={form.languageType}
+                onChange={(e) => setForm({ ...form, languageType: e.target.value })}
+                className="flex h-10 w-full px-3 py-2 text-sm"
+              >
+                {LANGUAGES.map((language) => (
+                  <option key={language.code} value={language.code}>
+                    {language.name}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="sync-vol">音量</Label>
-              <Input
-                id="sync-vol"
-                type="number"
-                step="0.1"
-                value={form.vol}
-                onChange={(e) => setForm({ ...form, vol: Number(e.target.value) })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sync-pitch">音高</Label>
-              <Input
-                id="sync-pitch"
-                type="number"
-                step="1"
-                value={form.pitch}
-                onChange={(e) => setForm({ ...form, pitch: Number(e.target.value) })}
-              />
-            </div>
+
             <div className="space-y-2">
               <Label htmlFor="sync-format">格式</Label>
               <select
@@ -144,59 +124,10 @@ export function SyncFields(props: {
                 className="flex h-10 w-full px-3 py-2 text-sm"
               >
                 <option value="mp3">mp3</option>
-                <option value="flac">flac</option>
                 <option value="wav">wav</option>
               </select>
             </div>
           </div>
-
-          <details className="rounded-[var(--radius-md)] border border-border/80 bg-secondary/40 p-3">
-            <summary className="cursor-pointer text-sm font-bold">高级设置</summary>
-            <div className="grid gap-4 md:grid-cols-2 mt-3">
-              <div className="space-y-2">
-                <Label htmlFor="sync-englishNormalization">英文规范化</Label>
-                <select
-                  id="sync-englishNormalization"
-                  value={String(form.englishNormalization)}
-                  onChange={(e) => setForm({ ...form, englishNormalization: e.target.value === 'true' })}
-                  className="flex h-10 w-full px-3 py-2 text-sm"
-                >
-                  <option value="false">关闭</option>
-                  <option value="true">开启</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sync-sampleRate">采样率</Label>
-                <Input
-                  id="sync-sampleRate"
-                  type="number"
-                  step="1"
-                  value={form.sampleRate}
-                  onChange={(e) => setForm({ ...form, sampleRate: Number(e.target.value) })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sync-bitrate">比特率</Label>
-                <Input
-                  id="sync-bitrate"
-                  type="number"
-                  step="1"
-                  value={form.bitrate}
-                  onChange={(e) => setForm({ ...form, bitrate: Number(e.target.value) })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sync-channel">声道</Label>
-                <Input
-                  id="sync-channel"
-                  type="number"
-                  step="1"
-                  value={form.channel}
-                  onChange={(e) => setForm({ ...form, channel: Number(e.target.value) })}
-                />
-              </div>
-            </div>
-          </details>
         </CardContent>
       </Card>
     </>

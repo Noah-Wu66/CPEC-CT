@@ -5,14 +5,11 @@ import {
 } from "@/app/api/ai/chat/utils";
 import { buildAttachmentTextBlock } from "@/lib/ai/server/files/service";
 import { getAttachmentInputType } from "@/lib/ai/shared/attachments";
-import { getMinimaxAnthropicContentBlocks } from "@/lib/ai/shared/minimaxAnthropicState";
 
-// 将一条存储的消息片段转换为 MiniMax Anthropic messages 的 content 片段。
-// 用户消息支持 text + image；附件文档转为文本块；助手历史只保留文本。
-async function storedPartToMinimaxPart(part, role, options = {}) {
+async function storedPartToOpenAIContentPart(part, role, options = {}) {
   if (!part || typeof part !== "object") return null;
 
-  const isAssistant = role === "assistant" || role === "model";
+  const isAssistant = role === "assistant";
 
   if (isNonEmptyString(part.text)) {
     return { type: "text", text: part.text };
@@ -22,16 +19,13 @@ async function storedPartToMinimaxPart(part, role, options = {}) {
     return null;
   }
 
-  const url = part?.inlineData?.url;
-  if (isNonEmptyString(url)) {
-    const { base64Data } = await fetchImageAsBase64(url);
-    const mimeType = part.inlineData?.mimeType || "image/jpeg";
+  const imageUrl = part?.inlineData?.url;
+  if (isNonEmptyString(imageUrl)) {
+    const { base64Data, mimeType } = await fetchImageAsBase64(imageUrl);
     return {
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: mimeType,
-        data: base64Data,
+      type: "image_url",
+      image_url: {
+        url: `data:${mimeType || "image/jpeg"};base64,${base64Data}`,
       },
     };
   }
@@ -55,45 +49,38 @@ async function storedPartToMinimaxPart(part, role, options = {}) {
   return null;
 }
 
-// 把存储的对话历史转换为 MiniMax messages 数组。
-export async function buildMinimaxMessagesFromHistory(messages, options = {}) {
+function normalizeOpenAIMessageContent(contentParts) {
+  if (!Array.isArray(contentParts) || contentParts.length === 0) return "";
+  const onlyText = contentParts.every((part) => part?.type === "text");
+  if (onlyText) {
+    return contentParts.map((part) => part.text).join("\n\n");
+  }
+  return contentParts;
+}
+
+export async function buildBailianMessagesFromHistory(messages, options = {}) {
   const result = [];
   for (const msg of messages) {
     if (msg?.role !== "user" && msg?.role !== "model") continue;
 
     const role = msg.role === "model" ? "assistant" : "user";
 
-    const providerContent = role === "assistant"
-      ? getMinimaxAnthropicContentBlocks(msg.providerState)
-      : null;
-    if (providerContent) {
-      result.push({ role: "assistant", content: providerContent });
-      continue;
-    }
-
-    // 没有 MiniMax 原始内容块的助手文本按普通 text 内容发送。
     if (role === "assistant" && isNonEmptyString(msg?.content)) {
-      result.push({ role: "assistant", content: msg.content });
+      result.push({ role, content: msg.content });
       continue;
     }
 
     const storedParts = getStoredPartsFromMessage(msg);
     if (!storedParts || storedParts.length === 0) continue;
 
-    const content = [];
+    const contentParts = [];
     for (const storedPart of storedParts) {
-      const p = await storedPartToMinimaxPart(storedPart, role, options);
-      if (p) content.push(p);
+      const part = await storedPartToOpenAIContentPart(storedPart, role, options);
+      if (part) contentParts.push(part);
     }
-    if (content.length === 0) continue;
+    if (contentParts.length === 0) continue;
 
-    // 纯文本消息可直接用 string，减少体积；含图片则用片段数组。
-    const onlyText = content.every((c) => c.type === "text");
-    if (onlyText) {
-      result.push({ role, content: content.map((c) => c.text).join("\n\n") });
-    } else {
-      result.push({ role, content });
-    }
+    result.push({ role, content: normalizeOpenAIMessageContent(contentParts) });
   }
   return result;
 }
@@ -109,11 +96,9 @@ export async function buildCurrentUserMessage({ prompt, images, attachments, fil
       if (!img?.url) continue;
       const { base64Data, mimeType } = await fetchImageAsBase64(img.url);
       content.push({
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: mimeType,
-          data: base64Data,
+        type: "image_url",
+        image_url: {
+          url: `data:${mimeType || "image/jpeg"};base64,${base64Data}`,
         },
       });
     }
@@ -133,4 +118,8 @@ export async function buildCurrentUserMessage({ prompt, images, attachments, fil
   }
 
   return content;
+}
+
+export function normalizeOpenAIMessageContentParts(contentParts) {
+  return normalizeOpenAIMessageContent(contentParts);
 }

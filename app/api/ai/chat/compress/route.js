@@ -2,7 +2,7 @@ import { getAuthPayload } from '@/lib/ai/auth';
 import { rateLimit, getClientIP } from '@/lib/ai/rateLimit';
 import dbConnect from '@/lib/ai/db';
 import { UserStore as User } from '@/lib/ai/server/store';
-import { requestMinimaxCompletion } from '@/lib/ai/server/minimax/client';
+import { requestBailianChatCompletion } from '@/lib/ai/server/bailian/openai';
 import { injectCurrentTimeSystemReminder } from '@/app/api/ai/chat/utils';
 import { logError } from '@/lib/logger';
 
@@ -80,7 +80,7 @@ export async function POST(req) {
 
         const systemPrompt = await injectCurrentTimeSystemReminder(COMPRESS_SYSTEM_PROMPT);
 
-        const summary = await requestMinimaxCompletion({
+        const summary = await requestBailianChatCompletion({
             system: systemPrompt,
             prompt: `请将以下对话历史压缩成一份摘要：\n\n${conversationText}`,
             signal: req?.signal,

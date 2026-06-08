@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/audio/auth/session';
-import { requestMinimaxCompletion } from '@/lib/ai/server/minimax/client';
+import { QWEN_MT_PLUS_MODEL, requestBailianChatCompletion } from '@/lib/ai/server/bailian/openai';
 import { logError } from '@/lib/logger';
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -25,10 +25,6 @@ export async function POST(request: NextRequest) {
     const session = await getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, message: '未登录' }, { status: 401 });
-    }
-
-    if (!process.env.MINIMAX_API_KEY) {
-      return NextResponse.json({ success: false, message: '缺少 MINIMAX_API_KEY' }, { status: 500 });
     }
 
     const body = await request.json();
@@ -58,9 +54,16 @@ export async function POST(request: NextRequest) {
       numberedLines,
     ].join('\n');
 
-    const resultText = await requestMinimaxCompletion({
+    const resultText = await requestBailianChatCompletion({
+      model: QWEN_MT_PLUS_MODEL,
       prompt,
       signal: request?.signal,
+      extra: {
+        translation_options: {
+          source_lang: 'auto',
+          target_lang: langName,
+        },
+      },
     });
 
     // 解析翻译结果

@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 
 const AVAILABLE_SKILLS = ["xcrawl", "xcrawl-search", "xcrawl-map", "xcrawl-scrape", "xcrawl-crawl"];
-const DEFAULT_MODEL = "MiniMax-M3";
+const DEFAULT_MODEL = "qwen3.7-plus";
 
 type AgentConfig = {
   goal?: string;

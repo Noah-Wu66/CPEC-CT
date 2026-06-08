@@ -2,8 +2,8 @@ import { getModelProvider } from "@/lib/ai/shared/models";
 
 // 各 provider 的品牌色与字标（内置 SVG，无需外部资源）
 const PROVIDER_STYLE = {
-  minimax: { label: "M", bg: "linear-gradient(135deg,#ff5b4a,#d6371f)", color: "#ffffff" },
-  "minimax-image": { label: "画", bg: "linear-gradient(135deg,#ff8a4a,#d65f1f)", color: "#ffffff" },
+  bailian: { label: "千", bg: "linear-gradient(135deg,#1677ff,#00a3ff)", color: "#ffffff" },
+  "bailian-image": { label: "图", bg: "linear-gradient(135deg,#00a870,#1677ff)", color: "#ffffff" },
 };
 
 const FALLBACK_STYLE = { label: "AI", bg: "linear-gradient(135deg,#1677ff,#003eb3)", color: "#ffffff" };

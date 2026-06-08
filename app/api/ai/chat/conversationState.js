@@ -1,5 +1,5 @@
 import { ConversationStore as Conversation } from "@/lib/ai/server/store";
-import { getModelProvider } from "@/lib/ai/shared/models";
+import { getModelProvider, normalizeModelId } from "@/lib/ai/shared/models";
 import { isValidConversationId } from "@/lib/ai/server/conversations/service";
 
 export const CONVERSATION_WRITE_CONFLICT_ERROR = "当前对话已被其他请求更新，请重试";
@@ -23,6 +23,12 @@ export async function loadConversationForRoute({ conversationId, userId, expecte
 
   if (expectedProvider && getModelProvider(conversation.model) !== expectedProvider) {
     throw createHttpError("当前对话与所选模型不匹配", 400);
+  }
+
+  const normalizedModel = normalizeModelId(conversation.model);
+  if (typeof normalizedModel === "string" && normalizedModel && normalizedModel !== conversation.model) {
+    await Conversation.updateOne({ _id: conversationId, userId }, { $set: { model: normalizedModel } });
+    conversation.model = normalizedModel;
   }
 
   return conversation;

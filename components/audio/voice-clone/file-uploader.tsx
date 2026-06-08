@@ -57,7 +57,7 @@ export function FileUploader({
         handleUploadUrl: '/api/audio/upload',
       });
 
-      const forwardResponse = await fetch('/api/audio/upload/forward-to-minimax', {
+      const forwardResponse = await fetch('/api/audio/upload/forward-to-bailian', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -69,7 +69,7 @@ export function FileUploader({
       const forwardData = await forwardResponse.json();
 
       if (!forwardResponse.ok || !forwardData.success) {
-        throw new Error(forwardData.error || '转发到 MiniMax 失败');
+        throw new Error(forwardData.error || '准备音频失败');
       }
 
       const proxyUrl = `/api/audio/blob?url=${encodeURIComponent(blob.url)}`;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/audio/auth/session';
 import { VoiceRepository } from '@/lib/audio/mongodb/repositories';
+import { VOICE_CLONE_TARGET_MODEL } from '@/lib/audio/client/tts-options';
 import { logError } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
@@ -14,7 +15,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const voices = await VoiceRepository.findByUserId(session.userId);
+    const voices = (await VoiceRepository.findByUserId(session.userId))
+      .filter((voice) => voice.model === VOICE_CLONE_TARGET_MODEL);
 
     return NextResponse.json({
       success: true,

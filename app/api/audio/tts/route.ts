@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/audio/auth/session';
-import { minimaxAPI } from '@/lib/audio/minimax/client';
-import { getAudioMimeType, normalizeAudioForStorage, saveAudioBuffer } from '@/lib/audio/storage';
-import { isLatestSpeechModel } from '@/lib/audio/client/tts-options';
+import { downloadAudioUrl, synthesizeSpeech } from '@/lib/audio/bailian/client';
+import { getAudioMimeType, saveAudioBuffer } from '@/lib/audio/storage';
+import { DEFAULT_TTS_VOICE, isSupportedSpeechModel } from '@/lib/audio/client/tts-options';
 import { logError } from '@/lib/logger';
 
-const SUPPORTED_SYNC_AUDIO_FORMATS = ['mp3', 'flac', 'wav'] as const;
+const SUPPORTED_AUDIO_FORMATS = ['mp3', 'wav'] as const;
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,16 +23,8 @@ export async function POST(request: NextRequest) {
       text,
       voiceId,
       model,
-      speed = 1.0,
-      vol = 1.0,
-      pitch = 0,
-      englishNormalization,
+      languageType = 'auto',
       audioFormat = 'mp3',
-      sampleRate,
-      bitrate,
-      channel,
-      voice_setting,
-      audio_setting,
     } = body;
 
     if (!text || !model) {
@@ -42,56 +34,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isLatestSpeechModel(model)) {
+    if (!isSupportedSpeechModel(model)) {
       return NextResponse.json(
-        { success: false, message: '仅支持最新版 MiniMax Speech 模型' },
+        { success: false, message: '仅支持百炼语音合成模型' },
         { status: 400 }
       );
     }
 
-    if (speed !== undefined && (typeof speed !== 'number' || speed < 0.5 || speed > 2.0)) {
+    if (!SUPPORTED_AUDIO_FORMATS.includes(audioFormat)) {
       return NextResponse.json(
-        { success: false, message: 'speed 参数必须在 0.5 到 2.0 之间' },
+        { success: false, message: 'audioFormat 参数必须是 mp3 或 wav' },
         { status: 400 }
       );
     }
-
-    if (vol !== undefined && (typeof vol !== 'number' || vol < 0.1 || vol > 10.0)) {
-      return NextResponse.json(
-        { success: false, message: 'vol 参数必须在 0.1 到 10.0 之间' },
-        { status: 400 }
-      );
-    }
-
-    if (pitch !== undefined && (typeof pitch !== 'number' || pitch < -12 || pitch > 12)) {
-      return NextResponse.json(
-        { success: false, message: 'pitch 参数必须在 -12 到 12 之间' },
-        { status: 400 }
-      );
-    }
-
-    if (!SUPPORTED_SYNC_AUDIO_FORMATS.includes(audioFormat)) {
-      return NextResponse.json(
-        { success: false, message: 'audioFormat 参数必须是 mp3、flac 或 wav' },
-        { status: 400 }
-      );
-    }
-
-    if (sampleRate !== undefined && (typeof sampleRate !== 'number' || ![8000, 16000, 24000, 32000, 40000, 48000].includes(sampleRate))) {
-      return NextResponse.json(
-        { success: false, message: 'sampleRate 参数必须是 8000, 16000, 24000, 32000, 40000 或 48000 之一' },
-        { status: 400 }
-      );
-    }
-
-    if (channel !== undefined && (typeof channel !== 'number' || (channel !== 1 && channel !== 2))) {
-      return NextResponse.json(
-        { success: false, message: 'channel 参数必须是 1 或 2' },
-        { status: 400 }
-      );
-    }
-
-    const actualVoiceId = voiceId || 'female-tianmei';
 
     if (text.length > 10000) {
       return NextResponse.json(
@@ -100,83 +55,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const mergedVoiceSetting = {
-      voice_id: voice_setting?.voice_id || actualVoiceId,
-      speed: voice_setting?.speed ?? speed,
-      vol: voice_setting?.vol ?? vol,
-      pitch: voice_setting?.pitch ?? pitch,
-      ...(typeof (voice_setting?.english_normalization ?? englishNormalization) === 'boolean'
-        ? { english_normalization: (voice_setting?.english_normalization ?? englishNormalization) as boolean }
-        : {}),
-    };
-
-    const mergedAudioSetting = {
-      format: audio_setting?.format || audioFormat,
-      ...(typeof (audio_setting?.sample_rate ?? sampleRate) === 'number'
-        ? { sample_rate: (audio_setting?.sample_rate ?? sampleRate) as number }
-        : {}),
-      ...(typeof (audio_setting?.bitrate ?? bitrate) === 'number'
-        ? { bitrate: (audio_setting?.bitrate ?? bitrate) as number }
-        : {}),
-      ...(typeof (audio_setting?.channel ?? channel) === 'number'
-        ? { channel: (audio_setting?.channel ?? channel) as number }
-        : {}),
-    };
-
-    const result = await minimaxAPI.textToSpeech({
+    const generated = await synthesizeSpeech({
       text,
       model,
-      voice_setting: mergedVoiceSetting,
-      audio_setting: mergedAudioSetting,
+      voiceId: voiceId || DEFAULT_TTS_VOICE,
+      languageType,
+      audioFormat,
+      signal: request?.signal,
     });
-
-    if (result.base_resp && result.base_resp.status_code !== 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: result.base_resp.status_msg || '语音合成失败',
-        },
-        { status: 400 }
-      );
-    }
-
-    const rawAudio = result.data?.audio || result.audio || result.base64_audio || result.s3_path || null;
-    const fileId = result.file_id || result.data?.file_id || null;
-    const audioMimeType = getAudioMimeType(audioFormat);
-    let audioUrl = '';
-
-    if (typeof rawAudio === 'string' && rawAudio.trim()) {
-      audioUrl = await normalizeAudioForStorage(rawAudio, audioMimeType, 'tts-sync');
-    }
-
-    if (!audioUrl && typeof fileId === 'string' && fileId.trim()) {
-      const downloaded = await minimaxAPI.retrieveFileContent(fileId);
-      const saved = await saveAudioBuffer(
-        downloaded.arrayBuffer,
-        downloaded.contentType || audioMimeType,
-        'tts-sync'
-      );
-      audioUrl = saved.url;
-    }
-
-    if (!audioUrl) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: '未生成可用音频',
-        },
-        { status: 500 }
-      );
-    }
+    const downloaded = await downloadAudioUrl(generated.audioUrl, request?.signal);
+    const saved = await saveAudioBuffer(
+      downloaded.arrayBuffer,
+      downloaded.contentType || getAudioMimeType(audioFormat),
+      'tts-sync'
+    );
 
     return NextResponse.json({
       success: true,
-      audio: audioUrl,
+      audio: saved.url,
       audioType: audioFormat,
-      metadata: result.metadata,
+      metadata: generated.raw?.usage,
     });
   } catch (error) {
-    logError('audio.tts', 'create sync speech', error);
+    logError('audio.tts', 'create speech', error);
     return NextResponse.json(
       { success: false, message: (error as Error).message || '语音合成失败' },
       { status: 500 }

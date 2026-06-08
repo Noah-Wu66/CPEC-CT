@@ -14,7 +14,7 @@ export function getScraperXcrawlEnv() {
 
 export function getScraperModelEnv() {
   return {
-    apiKey: readRequiredEnv("MINIMAX_API_KEY"),
-    model: "MiniMax-M3"
+    apiKey: readRequiredEnv("DASHSCOPE_API_KEY"),
+    model: "qwen3.7-plus"
   };
 }

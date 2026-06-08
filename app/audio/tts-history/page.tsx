@@ -18,11 +18,7 @@ interface TtsHistoryItem {
   text: string;
   audioUrl: string;
   model: string;
-  parameters: {
-    speed: number;
-    vol: number;
-    pitch: number;
-  };
+  parameters?: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -303,7 +299,7 @@ export default function TTSHistoryPage() {
                       {truncateText(item.text, 200)}
                     </p>
                   </div>
-                  <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
                     <div className="rounded-[var(--radius-md)] bg-secondary/50 p-3">
                       <span className="text-muted-foreground">模型</span>
                       <p className="break-words font-medium">{item.model}</p>
@@ -313,12 +309,8 @@ export default function TTSHistoryPage() {
                       <p className="break-words font-medium">{getVoiceName(item.voiceId)}</p>
                     </div>
                     <div className="rounded-[var(--radius-md)] bg-secondary/50 p-3">
-                      <span className="text-muted-foreground">语速</span>
-                      <p className="font-medium">{item.parameters.speed}</p>
-                    </div>
-                    <div className="rounded-[var(--radius-md)] bg-secondary/50 p-3">
-                      <span className="text-muted-foreground">音量</span>
-                      <p className="font-medium">{item.parameters.vol}</p>
+                      <span className="text-muted-foreground">语言</span>
+                      <p className="font-medium">{String(item.parameters?.languageType || 'auto')}</p>
                     </div>
                   </div>
                 </div>

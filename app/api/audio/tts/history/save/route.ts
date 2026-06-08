@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/audio/auth/session';
 import { TTSHistoryRepository } from '@/lib/audio/mongodb/repositories';
 import { isValidAudioUrl } from '@/lib/audio/storage';
+import { DEFAULT_TTS_VOICE } from '@/lib/audio/client/tts-options';
 import { logError } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
@@ -34,15 +35,11 @@ export async function POST(request: NextRequest) {
 
     await TTSHistoryRepository.create({
       userId: session.userId,
-      voiceId: voiceId || 'female-tianmei',
+      voiceId: voiceId || DEFAULT_TTS_VOICE,
       text,
       audioUrl,
       model,
-      parameters: parameters || {
-        speed: 1.0,
-        vol: 1.0,
-        pitch: 0,
-      },
+      parameters: parameters || {},
     });
 
     return NextResponse.json({

@@ -319,7 +319,7 @@ export default function SubtitleRecognitionPage() {
               onChange={(e) => setHotwordsText(e.target.value)}
               disabled={isProcessing}
               rows={3}
-              placeholder="例如：菁门·先锋行，火山方舟，MiniMax，数字融媒体"
+              placeholder="例如：菁门·先锋行，百炼，数字融媒体"
               className={`w-full rounded-[var(--radius-md)] border border-[var(--oa-control-border)] bg-[var(--oa-control-bg)] px-3 py-2 text-sm text-[var(--oa-ink)] transition-colors hover:border-[var(--audio-green)] focus:border-[var(--audio-green)] focus:outline-none ${
                 isProcessing ? 'cursor-not-allowed opacity-50' : ''
               }`}

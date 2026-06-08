@@ -1,6 +1,4 @@
-export type TTSMode = 'sync' | 'async';
-export type SyncAudioFormat = 'mp3' | 'flac' | 'wav';
-export type AsyncAudioFormat = 'mp3' | 'flac';
+export type SyncAudioFormat = 'mp3' | 'wav';
 
 export interface VoiceItem {
   id: string;
@@ -16,32 +14,6 @@ export interface SyncTTSFormState {
   text: string;
   voiceId: string;
   model: string;
-  englishNormalization: boolean;
-  speed: number;
-  vol: number;
-  pitch: number;
+  languageType: string;
   audioFormat: SyncAudioFormat;
-  sampleRate: number;
-  bitrate: number;
-  channel: number;
 }
-
-export interface AsyncTTSFormState {
-  text: string;
-  voiceId: string;
-  model: string;
-  languageBoost: string;
-  speed: number;
-  vol: number;
-  pitch: number;
-  pronunciationToneText: string;
-  audioFormat: AsyncAudioFormat;
-  audioSampleRate: number;
-  bitrate: number;
-  channel: number;
-  voiceModifyPitch: number;
-  voiceModifyIntensity: number;
-  voiceModifyTimbre: number;
-  voiceModifySoundEffects: string;
-}
-

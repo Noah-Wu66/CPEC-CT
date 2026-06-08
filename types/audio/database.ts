@@ -24,11 +24,7 @@ export interface TTSHistory {
   text: string;
   audioUrl: string;
   model: string;
-  parameters: {
-    speed: number;
-    vol: number;
-    pitch: number;
-  };
+  parameters?: Record<string, unknown>;
   createdAt: Date;
 }
 

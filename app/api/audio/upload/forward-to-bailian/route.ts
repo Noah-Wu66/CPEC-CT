@@ -1,7 +1,6 @@
 import { getSession } from '@/lib/audio/auth/session';
 import { NextRequest, NextResponse } from 'next/server';
-import { minimaxAPI } from '@/lib/audio/minimax/client';
-import { fetchPrivateBlob } from '@/lib/audio/blob';
+import { buildSignedDownloadUrl, fetchPrivateBlob } from '@/lib/audio/blob';
 import { logError } from '@/lib/logger';
 
 function isVercelBlobUrl(input: string): boolean {
@@ -11,8 +10,6 @@ function isVercelBlobUrl(input: string): boolean {
     if (url.username || url.password) return false;
 
     const host = url.hostname.toLowerCase();
-    // Vercel Blob 常见域名形态：*.public.blob.vercel-storage.com
-    // 只允许 vercel-storage.com 且包含 ".blob."
     if (!host.endsWith('.vercel-storage.com')) return false;
     if (!host.includes('.blob.')) return false;
 
@@ -65,25 +62,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const blob = await response.blob();
-    const file = new File([blob], blobUrl.split('/').pop() || 'audio.mp3', {
-      type: blob.type || 'audio/mpeg',
-    });
-
-    const file_id = await minimaxAPI.uploadFile(file, purpose as 'voice_clone' | 'prompt_audio');
+    const signedUrl = buildSignedDownloadUrl(blobUrl, new URL(request.url).origin);
 
     return NextResponse.json({
       success: true,
-      file_id,
+      file_id: signedUrl,
       blobUrl,
     });
   } catch (error) {
-    logError('audio.upload', 'forward audio to minimax', error);
+    logError('audio.upload', 'prepare audio for bailian', error);
     return NextResponse.json(
-      { success: false, message: (error as Error).message || '文件转发失败' },
+      { success: false, message: (error as Error).message || '文件准备失败' },
       { status: 500 }
     );
   }
 }
-
-

@@ -2,24 +2,21 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, ChevronUp, Sparkles, Upload } from 'lucide-react';
+import { Sparkles, Upload } from 'lucide-react';
 import { FileUploader } from '@/components/audio/voice-clone/file-uploader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AUDIO_LANGUAGE_OPTIONS } from '@/lib/audio/client/format';
-import { PRIMARY_MODELS } from '@/lib/audio/client/tts-options';
 
 export default function VoiceClonePage() {
   const router = useRouter();
   const [isCloning, setIsCloning] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [sourceFile, setSourceFile] = useState<{ url: string; fileId: string; blobUrl: string }>();
-  const [promptFile, setPromptFile] = useState<{ url: string; fileId: string; blobUrl: string }>();
 
   const generateVoiceId = () => {
     const timestamp = Date.now().toString(36);
@@ -31,9 +28,7 @@ export default function VoiceClonePage() {
     voiceId: generateVoiceId(),
     name: '',
     description: '',
-    promptText: '',
     previewText: '这是一段测试音频，用于预览克隆效果。',
-    model: 'speech-2.8-hd',
     language: 'zh',
   }));
 
@@ -61,13 +56,9 @@ export default function VoiceClonePage() {
         body: JSON.stringify({
           sourceFileId: sourceFile.fileId,
           sourceAudioUrl: sourceFile.url,
-          promptFileId: promptFile?.fileId,
-          promptAudioUrl: promptFile?.url,
-          promptText: formData.promptText || undefined,
           voiceId: formData.voiceId,
           name: formData.name,
           description: formData.description,
-          model: formData.model,
           previewText: formData.previewText,
           language: formData.language,
         }),
@@ -124,39 +115,6 @@ export default function VoiceClonePage() {
               onRemove={() => setSourceFile(undefined)}
               purpose="voice_clone"
             />
-
-            <div className="pt-2 border-t border-border">
-              <button
-                type="button"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex w-full items-center justify-between rounded-[var(--radius-md)] px-1 py-1 text-left text-sm font-bold text-foreground transition-colors hover:text-[var(--audio-green)]"
-              >
-                <span>高级设置</span>
-                {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </button>
-
-              {showAdvanced && (
-                <div className="mt-4 space-y-4">
-                  <FileUploader
-                    label="示例音频文件（可选）"
-                    description="<8秒，用于增强克隆质量的示例音频"
-                    onUploadComplete={(url, fileId, blobUrl) => setPromptFile({ url, fileId, blobUrl })}
-                    onRemove={() => setPromptFile(undefined)}
-                    purpose="prompt_audio"
-                  />
-
-                  <div className="space-y-2">
-                    <Label htmlFor="promptText">提示文本（可选）</Label>
-                    <Input
-                      id="promptText"
-                      placeholder="描述该声音特征的文本，例如：自然、愉悦的声音"
-                      value={formData.promptText}
-                      onChange={(e) => setFormData({ ...formData, promptText: e.target.value })}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
           </CardContent>
         </Card>
 
@@ -201,35 +159,6 @@ export default function VoiceClonePage() {
                   <option key={lang.code} value={lang.code}>{lang.name}</option>
                 ))}
               </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="model">模型选择</Label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {PRIMARY_MODELS.map(model => (
-                  <label
-                    key={model.id}
-                    className={`flex cursor-pointer flex-col rounded-[var(--radius-md)] border p-4 transition-colors ${
-                      formData.model === model.id
-                        ? 'border-[var(--audio-green)] bg-[var(--soft-green)]'
-                        : 'border-[var(--oa-card-border)] bg-[var(--oa-card-bg)] hover:bg-[var(--oa-paper-soft)]'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="model"
-                      value={model.id}
-                      checked={formData.model === model.id}
-                      onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                      className="sr-only"
-                    />
-                    <span className="font-medium">{model.name}</span>
-                    <span className="text-xs text-muted-foreground mt-1">
-                      {model.description}
-                    </span>
-                  </label>
-                ))}
-              </div>
             </div>
 
             <div className="space-y-2">
