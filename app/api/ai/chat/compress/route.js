@@ -83,6 +83,7 @@ export async function POST(req) {
         const summary = await requestBailianChatCompletion({
             system: systemPrompt,
             prompt: `请将以下对话历史压缩成一份摘要：\n\n${conversationText}`,
+            reasoningEffort: 'high',
             signal: req?.signal,
         });
 

@@ -29,11 +29,11 @@ import {
   parseWebSearchConfig,
   parseWebSearchEnabled,
 } from "@/lib/ai/server/chat/requestConfig";
+import { WEB_BROWSING_IDENTIFIER, WebBrowsingApiName } from "@/lib/ai/shared/webBrowsing";
 import {
-  buildQwenChatRequest,
+  buildQwenResponsesRequest,
   createBailianOpenAIClient,
-  getOpenAIReasoningText,
-  getQwenMaxCompletionTokens,
+  getResponsesCompletedUsage,
   normalizeOpenAIError,
 } from "@/lib/ai/server/bailian/openai";
 import {
@@ -52,9 +52,28 @@ import { logError } from "@/lib/logger";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function buildUsageProviderState(usage) {
-  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return undefined;
-  return { bailianOpenAI: { usage } };
+function buildBailianResponsesProviderState({ responseId, previousResponseId, usage, tools }) {
+  const state = {};
+  if (typeof responseId === "string" && responseId.trim()) state.responseId = responseId.trim();
+  if (typeof previousResponseId === "string" && previousResponseId.trim()) state.previousResponseId = previousResponseId.trim();
+  if (usage && typeof usage === "object" && !Array.isArray(usage)) state.usage = usage;
+  if (tools && typeof tools === "object" && !Array.isArray(tools)) state.tools = tools;
+  return Object.keys(state).length > 0 ? { bailianResponses: state } : undefined;
+}
+
+function getStoredBailianResponseId(messages) {
+  if (!Array.isArray(messages)) return "";
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.role !== "model") continue;
+    const responseId = message?.providerState?.bailianResponses?.responseId;
+    if (typeof responseId === "string" && responseId.trim()) return responseId.trim();
+  }
+  return "";
+}
+
+function uniqueCitationsFromMap(citationMap) {
+  return Array.from(citationMap.values()).filter((item) => item?.url);
 }
 
 export async function POST(req) {
@@ -145,6 +164,7 @@ export async function POST(req) {
 
     let qwenMessages = [];
     let storedMessagesForRegenerate = null;
+    let previousResponseId = "";
 
     const collectAttachmentUrls = (msgs) => msgs.flatMap((msg) =>
       Array.isArray(msg?.parts)
@@ -175,19 +195,25 @@ export async function POST(req) {
 
       const msgs = storedMessagesForRegenerate;
       const historyBeforeCurrentPrompt = Array.isArray(msgs) && msgs[msgs.length - 1]?.role === "user" ? msgs.slice(0, -1) : msgs;
-      const effectiveHistory = (limit > 0) ? historyBeforeCurrentPrompt.slice(-limit) : historyBeforeCurrentPrompt;
       const currentTurn = Array.isArray(msgs) && msgs[msgs.length - 1]?.role === "user" ? [msgs[msgs.length - 1]] : [];
-      const allForAttachments = [...effectiveHistory, ...currentTurn];
-      const fileTextMap = await prepareDocumentAttachmentMapByUrls(collectAttachmentUrls(allForAttachments), {
+      previousResponseId = getStoredBailianResponseId(historyBeforeCurrentPrompt);
+      const effectiveHistory = previousResponseId
+        ? []
+        : ((limit > 0) ? historyBeforeCurrentPrompt.slice(-limit) : historyBeforeCurrentPrompt);
+      const inputMessages = [...effectiveHistory, ...currentTurn];
+      const fileTextMap = await prepareDocumentAttachmentMapByUrls(collectAttachmentUrls(inputMessages), {
         userId: user.userId, conversationId: currentConversationId, signal: req?.signal,
       });
-      qwenMessages = await buildBailianMessagesFromHistory(allForAttachments, { fileTextMap });
+      qwenMessages = await buildBailianMessagesFromHistory(inputMessages, { fileTextMap });
     } else {
-      const effectiveHistory = (limit > 0) ? history.slice(-limit) : history;
-      const fileTextMap = await prepareDocumentAttachmentMapByUrls(collectAttachmentUrls(effectiveHistory), {
-        userId: user.userId, conversationId: currentConversationId, signal: req?.signal,
-      });
-      qwenMessages = await buildBailianMessagesFromHistory(effectiveHistory, { fileTextMap });
+      previousResponseId = getStoredBailianResponseId(previousMessages);
+      if (!previousResponseId) {
+        const effectiveHistory = (limit > 0) ? history.slice(-limit) : history;
+        const fileTextMap = await prepareDocumentAttachmentMapByUrls(collectAttachmentUrls(effectiveHistory), {
+          userId: user.userId, conversationId: currentConversationId, signal: req?.signal,
+        });
+        qwenMessages = await buildBailianMessagesFromHistory(effectiveHistory, { fileTextMap });
+      }
     }
 
     const userSystemPrompt = parseSystemPrompt(config?.systemPrompt);
@@ -289,7 +315,120 @@ export async function POST(req) {
         let fullText = "";
         let fullThought = "";
         let finalUsage = null;
+        let finalResponseId = "";
+        let finalToolUsage = null;
+        const toolRuns = new Map();
+        const citationMap = new Map();
+        const responseToolRounds = new Map();
+        let searchRound = 0;
+        let readerRound = 0;
         let finalMessagePersisted = false;
+
+        const addCitation = (url, title = "") => {
+          if (typeof url !== "string" || !url.trim()) return;
+          const cleanUrl = url.trim();
+          if (!citationMap.has(cleanUrl)) {
+            citationMap.set(cleanUrl, { url: cleanUrl, title: typeof title === "string" ? title : "" });
+          }
+        };
+
+        const patchToolRun = (id, patch) => {
+          if (typeof id !== "string" || !id.trim()) return;
+          const key = id.trim();
+          const current = toolRuns.get(key) || { id: key };
+          toolRuns.set(key, { ...current, ...patch });
+        };
+
+        const sourcesToResults = (sources) => {
+          if (!Array.isArray(sources)) return [];
+          return sources
+            .map((source) => {
+              const url = typeof source?.url === "string" ? source.url.trim() : "";
+              if (!url) return null;
+              const title = typeof source?.title === "string" && source.title.trim() ? source.title.trim() : url;
+              addCitation(url, title);
+              return { title, url };
+            })
+            .filter(Boolean);
+        };
+
+        const urlsToResults = (urls) => {
+          if (!Array.isArray(urls)) return [];
+          return urls
+            .map((url) => (typeof url === "string" ? url.trim() : ""))
+            .filter(Boolean)
+            .map((url) => {
+              addCitation(url, url);
+              return { title: url, url };
+            });
+        };
+
+        const handleOutputItemAdded = (item, sendEvent) => {
+          if (!item || typeof item !== "object") return;
+          if (item.type === "web_search_call") {
+            const round = searchRound + 1;
+            searchRound = round;
+            responseToolRounds.set(item.id, round);
+            const query = typeof item.action?.query === "string" ? item.action.query : "联网搜索";
+            patchToolRun(item.id, {
+              identifier: WEB_BROWSING_IDENTIFIER,
+              apiName: WebBrowsingApiName.search,
+              type: "builtin",
+              status: "running",
+              title: "联网搜索",
+              arguments: { query },
+              startedAt: new Date().toISOString(),
+            });
+            sendEvent({ type: "search_start", query, round });
+          } else if (item.type === "web_extractor_call") {
+            const round = readerRound + 1;
+            readerRound = round;
+            responseToolRounds.set(item.id, round);
+            const urls = Array.isArray(item.urls) ? item.urls.filter((url) => typeof url === "string" && url.trim()) : [];
+            const url = urls[0] || "";
+            patchToolRun(item.id, {
+              identifier: WEB_BROWSING_IDENTIFIER,
+              apiName: WebBrowsingApiName.crawlSinglePage,
+              type: "builtin",
+              status: "running",
+              title: "网页阅读",
+              arguments: { urls, goal: item.goal || "" },
+              startedAt: new Date().toISOString(),
+            });
+            sendEvent({ type: "page_fetch_start", url, round });
+          }
+        };
+
+        const handleOutputItemDone = (item, sendEvent) => {
+          if (!item || typeof item !== "object") return;
+          if (item.type === "web_search_call") {
+            const query = typeof item.action?.query === "string" ? item.action.query : "联网搜索";
+            const sources = Array.isArray(item.action?.sources) ? item.action.sources : [];
+            const results = sourcesToResults(sources);
+            const round = responseToolRounds.get(item.id) || searchRound || 1;
+            patchToolRun(item.id, {
+              status: "success",
+              summary: results.map((result) => result.url).join("\n"),
+              state: { results },
+              citations: results,
+              finishedAt: new Date().toISOString(),
+            });
+            sendEvent({ type: "search_result", query, results, round });
+          } else if (item.type === "web_extractor_call") {
+            const urls = Array.isArray(item.urls) ? item.urls.filter((url) => typeof url === "string" && url.trim()) : [];
+            const results = urlsToResults(urls);
+            const round = responseToolRounds.get(item.id) || readerRound || 1;
+            patchToolRun(item.id, {
+              status: "success",
+              summary: typeof item.output === "string" ? item.output : "",
+              content: typeof item.output === "string" ? item.output : "",
+              state: { results },
+              citations: results,
+              finishedAt: new Date().toISOString(),
+            });
+            sendEvent({ type: "page_fetch_result", url: urls[0] || "", results, round });
+          }
+        };
 
         const rollbackCurrentTurn = async () => {
           if (finalMessagePersisted) return;
@@ -321,16 +460,19 @@ export async function POST(req) {
           const systemPrompt = await buildDirectChatSystemPrompt({
             userSystemPrompt, systemPromptSuffix, enableWebSearch, searchContextSection: "",
           });
-          const requestMessages = systemPrompt.trim()
-            ? [{ role: "system", content: systemPrompt }, ...qwenMessages]
-            : qwenMessages;
+          const tools = enableWebSearch
+            ? [{ type: "web_search" }, { type: "web_extractor" }]
+            : undefined;
 
-          const stream = await bailianClient.chat.completions.create(
-            buildQwenChatRequest({
+          const stream = await bailianClient.responses.create(
+            buildQwenResponsesRequest({
               model: apiModel,
-              messages: requestMessages,
+              input: qwenMessages,
+              instructions: systemPrompt,
+              previousResponseId,
               stream: true,
-              maxCompletionTokens: getQwenMaxCompletionTokens(),
+              reasoningEffort: "high",
+              tools,
             }),
             { signal: req?.signal }
           );
@@ -338,22 +480,40 @@ export async function POST(req) {
           for await (const chunk of stream) {
             if (clientAborted) break;
 
-            if (chunk?.usage) {
-              finalUsage = chunk.usage;
+            if (chunk?.type === "response.output_text.delta") {
+              const delta = typeof chunk.delta === "string" ? chunk.delta : "";
+              if (delta) {
+                fullText += delta;
+                sendEvent({ type: "text", content: delta });
+              }
+              continue;
             }
 
-            const delta = chunk?.choices?.[0]?.delta;
-            if (!delta) continue;
-
-            const reasoningChunk = getOpenAIReasoningText(delta);
-            if (reasoningChunk) {
-              fullThought += reasoningChunk;
-              sendEvent({ type: "thought", content: reasoningChunk });
+            if (chunk?.type === "response.reasoning_summary_text.delta") {
+              const delta = typeof chunk.delta === "string" ? chunk.delta : "";
+              if (delta) {
+                fullThought += delta;
+                sendEvent({ type: "thought", content: delta });
+              }
+              continue;
             }
 
-            if (typeof delta.content === "string" && delta.content) {
-              fullText += delta.content;
-              sendEvent({ type: "text", content: delta.content });
+            if (chunk?.type === "response.output_item.added") {
+              handleOutputItemAdded(chunk.item, sendEvent);
+              continue;
+            }
+
+            if (chunk?.type === "response.output_item.done") {
+              handleOutputItemDone(chunk.item, sendEvent);
+              continue;
+            }
+
+            if (chunk?.type === "response.completed") {
+              finalUsage = getResponsesCompletedUsage(chunk);
+              finalResponseId = typeof chunk.response?.id === "string" ? chunk.response.id : "";
+              finalToolUsage = chunk.response?.usage?.x_tools && typeof chunk.response.usage.x_tools === "object"
+                ? chunk.response.usage.x_tools
+                : null;
             }
           }
 
@@ -366,19 +526,30 @@ export async function POST(req) {
           fullText = fullText.trim();
           fullThought = fullThought.trim();
 
+          const citations = uniqueCitationsFromMap(citationMap);
+          if (citations.length > 0) {
+            sendEvent({ type: "citations", citations });
+          }
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
 
           if (user && currentConversationId) {
-            const providerState = buildUsageProviderState(finalUsage);
+            const providerState = buildBailianResponsesProviderState({
+              responseId: finalResponseId,
+              previousResponseId,
+              usage: finalUsage,
+              tools: finalToolUsage,
+            });
+            const persistedTools = Array.from(toolRuns.values()).filter((tool) => tool?.id && tool?.identifier && tool?.apiName);
             const modelMessage = {
               id: resolvedModelMessageId,
               role: "model",
               content: fullText,
               thought: fullThought,
-              citations: null,
+              citations: citations.length > 0 ? citations : null,
               type: "text",
               parts: [{ text: fullText }],
               ...(providerState ? { providerState } : {}),
+              ...(persistedTools.length > 0 ? { tools: persistedTools } : {}),
             };
             const persistedConversation = await Conversation.findOneAndUpdate(
               buildConversationWriteCondition(currentConversationId, user.userId, writePermitTime),

@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
-  buildQwenChatRequest,
+  buildQwenResponsesRequest,
   createBailianOpenAIClient,
-  getOpenAIMessageText,
-  getQwenMaxCompletionTokens,
+  getResponsesOutputItems,
+  getResponsesOutputText,
   normalizeOpenAIError,
 } from "@/lib/ai/server/bailian/openai";
 
@@ -50,8 +50,8 @@ function normalizeJsonSchema(value: unknown): unknown {
   return next;
 }
 
-function agentContentsToOpenAIMessages(contents: AgentContent[]) {
-  const messages: Array<Record<string, unknown>> = [];
+function agentContentsToResponsesInput(contents: AgentContent[]) {
+  const input: Array<Record<string, unknown>> = [];
 
   for (const content of contents) {
     const parts = Array.isArray(content?.parts) ? content.parts : [];
@@ -61,24 +61,21 @@ function agentContentsToOpenAIMessages(contents: AgentContent[]) {
         .map((part) => (typeof part.text === "string" ? part.text : ""))
         .filter(Boolean)
         .join("\n");
-      const toolCalls = parts
-        .filter((part) => part.functionCall && typeof part.functionCall.name === "string")
-        .map((part) => ({
-          id: String(part.functionCall?.id || randomUUID()),
-          type: "function",
-          function: {
-            name: String(part.functionCall?.name),
-            arguments: JSON.stringify(isPlainObject(part.functionCall?.args) ? part.functionCall?.args : {}),
-          },
-        }));
-
-      if (text || toolCalls.length > 0) {
-        const message: Record<string, unknown> = {
+      if (text) {
+        input.push({
           role: "assistant",
-          content: text || null,
-        };
-        if (toolCalls.length > 0) message.tool_calls = toolCalls;
-        messages.push(message);
+          content: [{ type: "output_text", text }],
+        });
+      }
+      for (const part of parts) {
+        if (!part.functionCall || typeof part.functionCall.name !== "string") continue;
+        input.push({
+          type: "function_call",
+          name: String(part.functionCall.name),
+          arguments: JSON.stringify(isPlainObject(part.functionCall.args) ? part.functionCall.args : {}),
+          call_id: String(part.functionCall.id || randomUUID()),
+          status: "completed",
+        });
       }
       continue;
     }
@@ -87,10 +84,11 @@ function agentContentsToOpenAIMessages(contents: AgentContent[]) {
     if (functionResponses.length > 0) {
       for (const part of functionResponses) {
         const response = part.functionResponse;
-        messages.push({
-          role: "tool",
-          tool_call_id: String(response?.id || ""),
-          content: JSON.stringify(response?.response ?? {}),
+        input.push({
+          type: "function_call_output",
+          call_id: String(response?.id || ""),
+          output: JSON.stringify(response?.response ?? {}),
+          status: "completed",
         });
       }
       const text = parts
@@ -98,7 +96,7 @@ function agentContentsToOpenAIMessages(contents: AgentContent[]) {
         .filter(Boolean)
         .join("\n");
       if (text) {
-        messages.push({ role: "user", content: text });
+        input.push({ role: "user", content: text });
       }
       continue;
     }
@@ -107,11 +105,11 @@ function agentContentsToOpenAIMessages(contents: AgentContent[]) {
       .filter((part) => typeof part.text === "string" && part.text.trim())
       .map((part) => part.text as string);
     if (textPieces.length > 0) {
-      messages.push({ role: "user", content: textPieces.join("\n") });
+      input.push({ role: "user", content: textPieces.join("\n") });
     }
   }
 
-  return messages;
+  return input;
 }
 
 function agentToolsToOpenAITools(
@@ -123,13 +121,11 @@ function agentToolsToOpenAITools(
 
   return declarations.map((decl) => ({
     type: "function",
-    function: {
-      name: String(decl.name),
-      description: typeof decl.description === "string" ? decl.description : "",
-      parameters: normalizeJsonSchema(
-        (decl.parameters as Record<string, unknown>) || { type: "object", properties: {} }
-      ),
-    },
+    name: String(decl.name),
+    description: typeof decl.description === "string" ? decl.description : "",
+    parameters: normalizeJsonSchema(
+      (decl.parameters as Record<string, unknown>) || { type: "object", properties: {} }
+    ),
   }));
 }
 
@@ -139,18 +135,18 @@ export async function callBailianAgent(input: {
   contents: AgentContent[];
   tools?: Array<{ functionDeclarations: Array<Record<string, unknown>> }>;
 }) {
-  const messages = agentContentsToOpenAIMessages(input.contents);
+  const responseInput = agentContentsToResponsesInput(input.contents);
   const tools = agentToolsToOpenAITools(input.tools);
   const client = createBailianOpenAIClient();
 
   try {
-    return (await client.chat.completions.create(
-      buildQwenChatRequest({
+    return (await client.responses.create(
+      buildQwenResponsesRequest({
         model: input.model,
-        messages,
+        input: responseInput,
         stream: false,
         tools,
-        maxCompletionTokens: getQwenMaxCompletionTokens(),
+        reasoningEffort: "high",
       }) as any
     )) as unknown as Record<string, unknown>;
   } catch (error) {
@@ -163,17 +159,14 @@ export async function callBailianAgent(input: {
 }
 
 export function extractBailianText(response: any) {
-  return getOpenAIMessageText(response?.choices?.[0]?.message);
+  return getResponsesOutputText(response);
 }
 
 export function extractBailianFunctionCalls(response: any) {
-  const toolCalls = response?.choices?.[0]?.message?.tool_calls;
-  if (!Array.isArray(toolCalls)) return [];
-
-  return toolCalls
-    .filter((toolCall: any) => toolCall?.type === "function" && typeof toolCall.function?.name === "string")
-    .map((toolCall: any) => {
-      const rawArgs = typeof toolCall.function?.arguments === "string" ? toolCall.function.arguments : "{}";
+  return getResponsesOutputItems(response)
+    .filter((item: any) => item?.type === "function_call" && typeof item.name === "string")
+    .map((item: any) => {
+      const rawArgs = typeof item.arguments === "string" ? item.arguments : "{}";
       let args: Record<string, unknown> = {};
       try {
         const parsed = JSON.parse(rawArgs);
@@ -182,17 +175,16 @@ export function extractBailianFunctionCalls(response: any) {
         args = {};
       }
       return {
-        id: String(toolCall.id || randomUUID()),
-        name: String(toolCall.function.name),
+        id: String(item.call_id || item.id || randomUUID()),
+        name: String(item.name),
         args,
       };
     });
 }
 
 export function extractModelContent(response: any): AgentContent {
-  const message = response?.choices?.[0]?.message;
   const parts: AgentPart[] = [];
-  const text = getOpenAIMessageText(message);
+  const text = getResponsesOutputText(response);
   if (text) {
     parts.push({ text });
   }
@@ -214,18 +206,29 @@ export function appendFunctionResults(input: {
     result: Record<string, unknown>;
   }>;
 }) {
-  input.contents.push(input.modelContent);
+  const textParts = input.modelContent.parts.filter((part) => typeof part.text === "string" && part.text);
+  if (textParts.length > 0) {
+    input.contents.push({ role: "model", parts: textParts });
+  }
 
-  input.contents.push({
-    role: "user",
-    parts: input.results.map((result) => ({
-      functionResponse: {
-        name: result.name,
-        id: result.id,
-        response: {
-          result: result.result,
+  const calls = input.modelContent.parts.filter((part) => part.functionCall);
+  for (const result of input.results) {
+    const callPart = calls.find((part) => part.functionCall?.id === result.id && part.functionCall?.name === result.name);
+    if (callPart) {
+      input.contents.push({ role: "model", parts: [callPart] });
+    }
+
+    input.contents.push({
+      role: "user",
+      parts: [{
+        functionResponse: {
+          name: result.name,
+          id: result.id,
+          response: {
+            result: result.result,
+          },
         },
-      },
-    })),
-  });
+      }],
+    });
+  }
 }

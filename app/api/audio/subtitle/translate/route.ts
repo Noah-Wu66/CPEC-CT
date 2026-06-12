@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/audio/auth/session';
-import { QWEN_MT_PLUS_MODEL, requestBailianChatCompletion } from '@/lib/ai/server/bailian/openai';
+import { QWEN_PLUS_MODEL } from '@/lib/ai/shared/models';
+import { requestBailianChatCompletion } from '@/lib/ai/server/bailian/openai';
 import { logError } from '@/lib/logger';
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -55,15 +56,10 @@ export async function POST(request: NextRequest) {
     ].join('\n');
 
     const resultText = await requestBailianChatCompletion({
-      model: QWEN_MT_PLUS_MODEL,
+      model: QWEN_PLUS_MODEL,
       prompt,
       signal: request?.signal,
-      extra: {
-        translation_options: {
-          source_lang: 'auto',
-          target_lang: langName,
-        },
-      },
+      reasoningEffort: 'high',
     });
 
     // 解析翻译结果

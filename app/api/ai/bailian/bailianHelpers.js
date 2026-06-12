@@ -1,5 +1,4 @@
 import {
-  fetchImageAsBase64,
   isNonEmptyString,
   getStoredPartsFromMessage,
 } from "@/app/api/ai/chat/utils";
@@ -12,7 +11,7 @@ async function storedPartToOpenAIContentPart(part, role, options = {}) {
   const isAssistant = role === "assistant";
 
   if (isNonEmptyString(part.text)) {
-    return { type: "text", text: part.text };
+    return { type: isAssistant ? "output_text" : "input_text", text: part.text };
   }
 
   if (isAssistant) {
@@ -21,12 +20,9 @@ async function storedPartToOpenAIContentPart(part, role, options = {}) {
 
   const imageUrl = part?.inlineData?.url;
   if (isNonEmptyString(imageUrl)) {
-    const { base64Data, mimeType } = await fetchImageAsBase64(imageUrl);
     return {
-      type: "image_url",
-      image_url: {
-        url: `data:${mimeType || "image/jpeg"};base64,${base64Data}`,
-      },
+      type: "input_image",
+      image_url: imageUrl,
     };
   }
 
@@ -39,7 +35,7 @@ async function storedPartToOpenAIContentPart(part, role, options = {}) {
       const extractedText = prepared?.structuredText || prepared?.extractedText || "";
       if (isNonEmptyString(extractedText)) {
         return {
-          type: "text",
+          type: "input_text",
           text: buildAttachmentTextBlock(prepared.file || part.fileData, extractedText),
         };
       }
@@ -51,10 +47,6 @@ async function storedPartToOpenAIContentPart(part, role, options = {}) {
 
 function normalizeOpenAIMessageContent(contentParts) {
   if (!Array.isArray(contentParts) || contentParts.length === 0) return "";
-  const onlyText = contentParts.every((part) => part?.type === "text");
-  if (onlyText) {
-    return contentParts.map((part) => part.text).join("\n\n");
-  }
   return contentParts;
 }
 
@@ -66,7 +58,10 @@ export async function buildBailianMessagesFromHistory(messages, options = {}) {
     const role = msg.role === "model" ? "assistant" : "user";
 
     if (role === "assistant" && isNonEmptyString(msg?.content)) {
-      result.push({ role, content: msg.content });
+      result.push({
+        role,
+        content: [{ type: "output_text", text: msg.content }],
+      });
       continue;
     }
 
@@ -88,18 +83,15 @@ export async function buildBailianMessagesFromHistory(messages, options = {}) {
 export async function buildCurrentUserMessage({ prompt, images, attachments, fileTextMap }) {
   const content = [];
   if (isNonEmptyString(prompt)) {
-    content.push({ type: "text", text: prompt });
+    content.push({ type: "input_text", text: prompt });
   }
 
   if (Array.isArray(images)) {
     for (const img of images) {
       if (!img?.url) continue;
-      const { base64Data, mimeType } = await fetchImageAsBase64(img.url);
       content.push({
-        type: "image_url",
-        image_url: {
-          url: `data:${mimeType || "image/jpeg"};base64,${base64Data}`,
-        },
+        type: "input_image",
+        image_url: img.url,
       });
     }
   }
@@ -111,7 +103,7 @@ export async function buildCurrentUserMessage({ prompt, images, attachments, fil
       const extractedText = prepared?.structuredText || prepared?.extractedText || "";
       if (!isNonEmptyString(extractedText)) continue;
       content.push({
-        type: "text",
+        type: "input_text",
         text: buildAttachmentTextBlock(prepared.file || attachment, extractedText),
       });
     }
