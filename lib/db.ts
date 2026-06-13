@@ -31,6 +31,68 @@ export async function getDb(): Promise<Db> {
   return client.db();
 }
 
+const LEGACY_CONVERSATION_MODELS = [
+  "qwen3.7-plus",
+  "wan2.7-image-pro",
+  "MiniMax-M3",
+  "image-01",
+];
+
+const INVALID_EMAIL_FILTER = {
+  $or: [
+    { email: { $exists: false } },
+    { email: null },
+    { email: "" },
+    { email: { $not: { $type: "string" } } },
+  ],
+};
+
+const INVALID_TOKEN_HASH_FILTER = {
+  $or: [
+    { tokenHash: { $exists: false } },
+    { tokenHash: null },
+    { tokenHash: "" },
+    { tokenHash: { $not: { $type: "string" } } },
+  ],
+};
+
+const INVALID_URL_FILTER = {
+  $or: [
+    { url: { $exists: false } },
+    { url: null },
+    { url: "" },
+    { url: { $not: { $type: "string" } } },
+  ],
+};
+
+async function dropIndexIfExists(collection: Collection, indexName: string) {
+  try {
+    await collection.dropIndex(indexName);
+  } catch {
+    // 索引不存在时忽略
+  }
+}
+
+async function purgeLegacyStudioData(db: Db) {
+  const users = db.collection<UserDoc>("users");
+  const sessions = db.collection<SessionDoc>("sessions");
+  const conversations = db.collection("ai_conversations");
+  const blobFiles = db.collection("ai_blob_files");
+
+  await Promise.all([
+    users.deleteMany(INVALID_EMAIL_FILTER),
+    sessions.deleteMany(INVALID_TOKEN_HASH_FILTER),
+    conversations.deleteMany({ model: { $in: LEGACY_CONVERSATION_MODELS } }),
+    blobFiles.deleteMany(INVALID_URL_FILTER),
+  ]);
+
+  await Promise.all([
+    dropIndexIfExists(users, "email_1"),
+    dropIndexIfExists(sessions, "tokenHash_1"),
+    dropIndexIfExists(blobFiles, "url_1"),
+  ]);
+}
+
 export async function ensureMongoIndexes() {
   if (global.studioIndexesReady) {
     return;
@@ -40,6 +102,7 @@ export async function ensureMongoIndexes() {
     global.studioIndexesPromise = (async () => {
       try {
         const db = await getDb();
+        await purgeLegacyStudioData(db);
         await Promise.all([
           db.collection<UserDoc>("users").createIndex({ email: 1 }, { unique: true }),
           db.collection<SessionDoc>("sessions").createIndex({ tokenHash: 1 }, { unique: true }),
