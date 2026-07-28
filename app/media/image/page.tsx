@@ -10,6 +10,7 @@ import { editImage, generateImage } from '@/lib/media/client/media';
 import {
   IMAGE_EDIT_ACCEPTED_MIME_TYPES,
   IMAGE_EDIT_MAX_BYTES,
+  IMAGE_EDIT_MAX_IMAGES,
   IMAGE_MODEL_ICON_URL,
   IMAGE_MODEL_NAME,
   IMAGE_PROMPT_MAX_LENGTH,
@@ -27,20 +28,17 @@ export default function ImageGenerationPage() {
   const [error, setError] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [resultTitle, setResultTitle] = useState('生成的图片');
-  const [sourceImage, setSourceImage] = useState<File | null>(null);
-  const [sourcePreviewUrl, setSourcePreviewUrl] = useState('');
+  const [sourceImages, setSourceImages] = useState<File[]>([]);
+  const [sourcePreviewUrls, setSourcePreviewUrls] = useState<string[]>([]);
   const [sourceInputKey, setSourceInputKey] = useState(0);
 
   useEffect(() => {
-    if (!sourceImage) {
-      setSourcePreviewUrl('');
-      return;
-    }
-
-    const nextUrl = URL.createObjectURL(sourceImage);
-    setSourcePreviewUrl(nextUrl);
-    return () => URL.revokeObjectURL(nextUrl);
-  }, [sourceImage]);
+    const nextUrls = sourceImages.map((image) => URL.createObjectURL(image));
+    setSourcePreviewUrls(nextUrls);
+    return () => {
+      nextUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [sourceImages]);
 
   const handleModeChange = (nextMode: ImageMode) => {
     setMode(nextMode);
@@ -49,12 +47,21 @@ export default function ImageGenerationPage() {
     setResultTitle(nextMode === 'edit' ? '编辑后的图片' : '生成的图片');
   };
 
-  const handleSourceImageChange = (file: File | null) => {
+  const handleSourceImagesChange = (files: File[]) => {
     setError('');
-    setSourceImage(file);
-    if (!file) {
+    if (files.length > IMAGE_EDIT_MAX_IMAGES) {
+      setSourceImages([]);
       setSourceInputKey((current) => current + 1);
+      setError(`参考图片最多支持 ${IMAGE_EDIT_MAX_IMAGES} 张`);
+      return;
     }
+    setSourceImages(files);
+    setSourceInputKey((current) => current + 1);
+  };
+
+  const handleRemoveSourceImage = (indexToRemove: number) => {
+    setError('');
+    setSourceImages((current) => current.filter((_, index) => index !== indexToRemove));
   };
 
   const handleSubmit = async (event: FormEvent) => {
@@ -73,26 +80,34 @@ export default function ImageGenerationPage() {
     }
 
     if (mode === 'edit') {
-      if (!sourceImage) {
-        setError('请上传需要编辑的图片');
+      if (sourceImages.length === 0) {
+        setError('请上传 1–3 张参考图片');
         return;
       }
 
-      if (!IMAGE_EDIT_ACCEPTED_MIME_TYPES.includes(sourceImage.type as typeof IMAGE_EDIT_ACCEPTED_MIME_TYPES[number])) {
-        setError('仅支持 JPG、JPEG、PNG、BMP、TIFF、WEBP、GIF 图片');
+      if (sourceImages.length > IMAGE_EDIT_MAX_IMAGES) {
+        setError(`参考图片最多支持 ${IMAGE_EDIT_MAX_IMAGES} 张`);
         return;
       }
 
-      if (sourceImage.size <= 0 || sourceImage.size > IMAGE_EDIT_MAX_BYTES) {
-        setError('图片大小不能超过 10MB');
-        return;
+      for (let index = 0; index < sourceImages.length; index += 1) {
+        const sourceImage = sourceImages[index];
+        if (!IMAGE_EDIT_ACCEPTED_MIME_TYPES.includes(sourceImage.type as typeof IMAGE_EDIT_ACCEPTED_MIME_TYPES[number])) {
+          setError(`第 ${index + 1} 张参考图片格式不支持`);
+          return;
+        }
+
+        if (sourceImage.size <= 0 || sourceImage.size > IMAGE_EDIT_MAX_BYTES) {
+          setError(`第 ${index + 1} 张参考图片大小不能超过 10MB`);
+          return;
+        }
       }
     }
 
     setIsGenerating(true);
     try {
-      const url = mode === 'edit' && sourceImage
-        ? await editImage({ prompt: prompt.trim(), size, image: sourceImage })
+      const url = mode === 'edit'
+        ? await editImage({ prompt: prompt.trim(), size, images: sourceImages })
         : await generateImage({ prompt: prompt.trim(), size });
       setImageUrl(url);
       setResultTitle(mode === 'edit' ? '编辑后的图片' : '生成的图片');
@@ -113,7 +128,7 @@ export default function ImageGenerationPage() {
             </div>
             <div>
               <CardTitle>图片生成</CardTitle>
-              <CardDescription>使用 {IMAGE_MODEL_NAME}，生成新图片或编辑已有图片。</CardDescription>
+              <CardDescription>使用 {IMAGE_MODEL_NAME}，生成新图片，或通过 1–3 张参考图编辑画面。</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -150,44 +165,61 @@ export default function ImageGenerationPage() {
 
             {mode === 'edit' ? (
               <div className="space-y-2">
-                <Label htmlFor="source-image">参考图片</Label>
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                <Label htmlFor="source-images">参考图片（1–3 张）</Label>
+                <div className="space-y-3">
                   <label
-                    htmlFor="source-image"
-                    className="flex min-h-[132px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--oa-control-border)] bg-[var(--oa-control-bg)] px-4 py-5 text-center text-sm text-[var(--oa-muted)] transition hover:border-[var(--oa-ink)] hover:text-[var(--oa-ink)]"
+                    htmlFor="source-images"
+                    className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--oa-control-border)] bg-[var(--oa-control-bg)] px-4 py-5 text-center text-sm text-[var(--oa-muted)] transition hover:border-[var(--oa-ink)] hover:text-[var(--oa-ink)]"
                   >
                     <Upload className="mb-2 h-6 w-6" />
-                    <span className="font-medium">{sourceImage ? sourceImage.name : '上传 JPG、PNG、BMP、TIFF、WEBP 或 GIF'}</span>
-                    <span className="mt-1 text-xs">最大 10MB</span>
+                    <span className="font-medium">
+                      {sourceImages.length > 0
+                        ? `已选择 ${sourceImages.length} 张，点击可重新选择`
+                        : '选择 1–3 张参考图片'}
+                    </span>
+                    <span className="mt-1 text-xs">支持 JPG、PNG、BMP、TIFF、WEBP、GIF，每张最大 10MB</span>
                     <input
                       key={sourceInputKey}
-                      id="source-image"
+                      id="source-images"
                       type="file"
+                      multiple
                       accept={IMAGE_EDIT_ACCEPTED_MIME_TYPES.join(',')}
                       className="sr-only"
-                      onChange={(event) => handleSourceImageChange(event.target.files?.[0] || null)}
+                      onChange={(event) => handleSourceImagesChange(Array.from(event.target.files || []))}
                     />
                   </label>
 
-                  <div className="relative overflow-hidden rounded-lg border border-[var(--oa-card-border)] bg-[var(--oa-paper-soft)]">
-                    {sourcePreviewUrl ? (
-                      <>
-                        <img src={sourcePreviewUrl} alt="参考图片" className="h-[132px] w-full object-contain" />
-                        <button
-                          type="button"
-                          onClick={() => handleSourceImageChange(null)}
-                          className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
-                          aria-label="移除图片"
+                  {sourceImages.length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {sourceImages.map((image, index) => (
+                        <div
+                          key={`${image.name}-${image.lastModified}-${index}`}
+                          className="relative overflow-hidden rounded-lg border border-[var(--oa-card-border)] bg-[var(--oa-paper-soft)]"
                         >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </>
-                    ) : (
-                      <div className="flex h-[132px] items-center justify-center text-sm text-[var(--oa-muted)]">
-                        未选择图片
-                      </div>
-                    )}
-                  </div>
+                          <img
+                            src={sourcePreviewUrls[index]}
+                            alt={`参考图片 ${index + 1}`}
+                            className="h-[148px] w-full object-contain"
+                          />
+                          <span className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-1 text-xs text-white">
+                            参考图 {index + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSourceImage(index)}
+                            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
+                            aria-label={`移除第 ${index + 1} 张参考图片`}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex h-20 items-center justify-center rounded-lg border border-[var(--oa-card-border)] bg-[var(--oa-paper-soft)] text-sm text-[var(--oa-muted)]">
+                      尚未选择参考图片
+                    </div>
+                  )}
                 </div>
               </div>
             ) : null}

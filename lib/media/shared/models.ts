@@ -1,13 +1,14 @@
-export const IMAGE_MODEL = "qwen-image-2.0-pro";
+export const IMAGE_MODEL = "qwen-image-3.0-pro";
 export const VIDEO_TEXT_MODEL = "happyhorse-1.1-t2v";
 export const VIDEO_IMAGE_MODEL = "happyhorse-1.1-i2v";
 
-export const IMAGE_MODEL_NAME = "Qwen-Image 2.0 Pro";
+export const IMAGE_MODEL_NAME = "Qwen-Image 3.0 Pro";
 export const VIDEO_MODEL_NAME = "HappyHorse 1.1";
 export const IMAGE_MODEL_ICON_URL = "https://cdn.marmot-cloud.com/storage/zenmux/2026/04/01/qeMamJm/Property-1Qwen.svg";
 export const VIDEO_MODEL_ICON_URL = "https://cdn.marmot-cloud.com/storage/zenmux/2026/04/29/PtJslv8/Property-1Happy-Horse.svg";
 export const IMAGE_PROMPT_MAX_LENGTH = 1300;
 export const IMAGE_EDIT_MAX_BYTES = 10 * 1024 * 1024;
+export const IMAGE_EDIT_MAX_IMAGES = 3;
 export const IMAGE_EDIT_ACCEPTED_MIME_TYPES = [
   "image/png",
   "image/jpeg",

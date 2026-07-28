@@ -31,7 +31,7 @@ Volume 直接挂载到应用服务，本项目应保持 **1 个运行实例**。
 
 当前服务接入：
 
-- **阿里云百炼新加坡端点**：Qwen3.7-Max、DeepSeek V4 Pro、Kimi K2.6、GLM 5.2、Qwen-Image 2.0 Pro、HappyHorse 1.1、Fun-ASR。
+- **阿里云百炼新加坡端点**：Qwen3.7-Max、DeepSeek V4 Pro、Kimi K2.6、GLM 5.2、Qwen-Image 3.0 Pro、HappyHorse 1.1、Fun-ASR。
 - **MiniMax**：Speech 2.8 / 2.6 语音合成和声音复刻。
 - **Firecrawl**：AI 对话联网搜索和网页正文读取。
 

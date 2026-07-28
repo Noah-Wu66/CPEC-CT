@@ -93,20 +93,24 @@ export async function generateAndStoreImage({
 export async function editAndStoreImage({
   userId,
   prompt,
-  image,
+  images,
   size = "2048*2048",
   signal,
 }: {
   userId: string;
   prompt: string;
-  image: File;
+  images: File[];
   size?: ImageSize;
   signal?: AbortSignal;
 }) {
+  const imageContent = await Promise.all(
+    images.map(async (image) => ({ image: await fileToDataUrl(image) }))
+  );
+
   return callQwenImage({
     userId,
     content: [
-      { image: await fileToDataUrl(image) },
+      ...imageContent,
       { text: prompt },
     ],
     size,

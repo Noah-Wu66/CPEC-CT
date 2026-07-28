@@ -4,6 +4,7 @@ import { editAndStoreImage } from "@/lib/media/server/bailian/images";
 import {
   IMAGE_EDIT_ACCEPTED_MIME_TYPES,
   IMAGE_EDIT_MAX_BYTES,
+  IMAGE_EDIT_MAX_IMAGES,
   IMAGE_PROMPT_MAX_LENGTH,
   IMAGE_SIZE_OPTIONS,
   type ImageSize,
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const prompt = String(formData.get("prompt") || "").trim();
     const size = String(formData.get("size") || "2048*2048");
-    const image = formData.get("image");
+    const imageEntries = formData.getAll("images");
 
     if (!prompt) {
       return NextResponse.json({ success: false, message: "请输入图片描述" }, { status: 400 });
@@ -42,22 +43,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "不支持的图片尺寸" }, { status: 400 });
     }
 
-    if (!(image instanceof File)) {
-      return NextResponse.json({ success: false, message: "请上传需要编辑的图片" }, { status: 400 });
+    if (imageEntries.length === 0 || imageEntries.some((entry) => !(entry instanceof File))) {
+      return NextResponse.json({ success: false, message: "请上传 1–3 张参考图片" }, { status: 400 });
     }
 
-    if (!ALLOWED_MIME_TYPES.has(image.type)) {
-      return NextResponse.json({ success: false, message: "仅支持 JPG、JPEG、PNG、BMP、TIFF、WEBP、GIF 图片" }, { status: 400 });
+    if (imageEntries.length > IMAGE_EDIT_MAX_IMAGES) {
+      return NextResponse.json(
+        { success: false, message: `参考图片最多支持 ${IMAGE_EDIT_MAX_IMAGES} 张` },
+        { status: 400 }
+      );
     }
 
-    if (image.size <= 0 || image.size > IMAGE_EDIT_MAX_BYTES) {
-      return NextResponse.json({ success: false, message: "图片大小不能超过 10MB" }, { status: 400 });
+    const images = imageEntries as File[];
+    for (let index = 0; index < images.length; index += 1) {
+      const image = images[index];
+      if (!ALLOWED_MIME_TYPES.has(image.type)) {
+        return NextResponse.json(
+          { success: false, message: `第 ${index + 1} 张参考图片格式不支持` },
+          { status: 400 }
+        );
+      }
+
+      if (image.size <= 0 || image.size > IMAGE_EDIT_MAX_BYTES) {
+        return NextResponse.json(
+          { success: false, message: `第 ${index + 1} 张参考图片大小不能超过 10MB` },
+          { status: 400 }
+        );
+      }
     }
 
     const imageUrl = await editAndStoreImage({
       userId: session.userId,
       prompt,
-      image,
+      images,
       size: size as ImageSize,
       signal: request.signal,
     });

@@ -65,12 +65,14 @@ export async function generateImage(input: {
 export async function editImage(input: {
   prompt: string;
   size: ImageSize;
-  image: File;
+  images: File[];
 }) {
   const formData = new FormData();
   formData.append("prompt", input.prompt);
   formData.append("size", input.size);
-  formData.append("image", input.image);
+  for (const image of input.images) {
+    formData.append("images", image);
+  }
 
   const response = await fetch("/api/media/image/edit", {
     method: "POST",
