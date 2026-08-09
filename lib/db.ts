@@ -48,7 +48,6 @@ export async function ensureMongoIndexes() {
           db.collection<SystemStateDoc>("system_state").createIndex({ key: 1 }, { unique: true }),
           db.collection("voices").createIndex({ userId: 1, createdAt: -1 }),
           db.collection("voices").createIndex({ userId: 1, sourceFileId: 1 }),
-          db.collection("voices").createIndex({ userId: 1, promptFileId: 1 }),
           db.collection("voices").createIndex({ userId: 1, previewFileId: 1 }),
           db.collection("tts_history").createIndex({ userId: 1, createdAt: -1 }),
           db.collection("tts_history").createIndex({ userId: 1, audioFileId: 1 }),

@@ -32,6 +32,14 @@ async function storedPartToOpenAIContentPart(part, role, options = {}) {
   const fileUrl = part?.fileData?.url;
   if (isNonEmptyString(fileUrl)) {
     const inputType = getAttachmentInputType(part?.fileData?.category);
+    if (inputType === "video") {
+      const providerVideoUrl = toAbsoluteFileUrl(fileUrl, options.publicOrigin);
+      if (!providerVideoUrl) throw new Error("视频地址无效");
+      return {
+        type: "video_url",
+        video_url: { url: providerVideoUrl },
+      };
+    }
     if (inputType === "file") {
       const fileTextMap = options?.fileTextMap instanceof Map ? options.fileTextMap : new Map();
       const prepared = fileTextMap.get(fileUrl);
@@ -104,6 +112,17 @@ export async function buildCurrentUserMessage({ prompt, images, attachments, fil
   if (Array.isArray(attachments)) {
     const map = fileTextMap instanceof Map ? fileTextMap : new Map();
     for (const attachment of attachments) {
+      const inputType = getAttachmentInputType(attachment?.category);
+      if (inputType === "video") {
+        const providerVideoUrl = toAbsoluteFileUrl(attachment?.url, publicOrigin);
+        if (!providerVideoUrl) throw new Error("视频地址无效");
+        content.push({
+          type: "video_url",
+          video_url: { url: providerVideoUrl },
+        });
+        continue;
+      }
+      if (inputType !== "file") continue;
       const prepared = map.get(attachment.url);
       const extractedText = prepared?.structuredText || prepared?.extractedText || "";
       if (!isNonEmptyString(extractedText)) continue;

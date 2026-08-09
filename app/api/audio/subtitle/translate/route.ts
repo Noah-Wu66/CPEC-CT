@@ -59,7 +59,10 @@ export async function POST(request: NextRequest) {
       model: QWEN_MODEL,
       prompt,
       signal: request?.signal,
-      reasoningEffort: 'high',
+      extra: {
+        enable_thinking: false,
+        preserve_thinking: false,
+      },
     });
 
     // 解析翻译结果

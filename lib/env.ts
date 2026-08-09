@@ -8,7 +8,6 @@ const mongoUriSchema = z.string().trim().min(1).refine(
 const runtimeEnvSchema = z.object({
   MONGO_URI: mongoUriSchema,
   DASHSCOPE_API_KEY: z.string().trim().min(1),
-  MINIMAX_API_KEY: z.string().trim().min(1),
   FIRECRAWL_API_KEY: z.string().trim().min(1),
 });
 
@@ -24,7 +23,6 @@ function buildEnv() {
   return {
     mongoUri: parsed.data.MONGO_URI,
     dashscopeApiKey: parsed.data.DASHSCOPE_API_KEY,
-    minimaxApiKey: parsed.data.MINIMAX_API_KEY,
     firecrawlApiKey: parsed.data.FIRECRAWL_API_KEY,
   } as const;
 }

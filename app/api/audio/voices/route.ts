@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/audio/auth/session';
 import { VoiceRepository } from '@/lib/audio/mongodb/repositories';
+import { QWEN_AUDIO_TTS_MODEL } from '@/lib/audio/bailian/tts';
 import { logError } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
@@ -15,7 +16,10 @@ export async function GET(request: NextRequest) {
     }
 
     const voices = (await VoiceRepository.findByUserId(session.userId))
-      .filter((voice) => voice.provider === 'minimax');
+      .filter((voice) => (
+        voice.provider === 'bailian'
+        && voice.model === QWEN_AUDIO_TTS_MODEL
+      ));
 
     return NextResponse.json({
       success: true,

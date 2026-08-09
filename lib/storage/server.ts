@@ -229,8 +229,11 @@ export function createStoredFileReadStream(relativePath: string, options?: { sta
 }
 
 export async function deleteStoredFile(fileId: string, userId: string) {
-  const file = await deleteStoredFileRecord(fileId, userId);
+  const file = await findStoredFileByIdForUser(fileId, userId);
   if (!file) return false;
+
+  // 先删除 Volume 中的正文，再删除 MongoDB 元数据。这样即使物理删除失败，
+  // 元数据仍可用于下一次幂等重试，不会留下无法定位的 Volume 孤儿文件。
   await removeIfExists(resolveStoragePath(file.relativePath));
-  return true;
+  return Boolean(await deleteStoredFileRecord(fileId, userId));
 }

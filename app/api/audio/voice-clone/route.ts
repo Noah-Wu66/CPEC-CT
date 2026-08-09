@@ -1,37 +1,43 @@
+import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/audio/auth/session';
-import { cloneVoice, downloadRemoteFile, uploadFile } from '@/lib/audio/minimax/client';
+import {
+  createCustomVoice,
+  deleteCustomVoice,
+  isBailianAudioError,
+  QWEN_AUDIO_LANGUAGE_CODES,
+  QWEN_AUDIO_TTS_MODEL,
+  synthesizeSpeech,
+} from '@/lib/audio/bailian/tts';
 import { VoiceRepository } from '@/lib/audio/mongodb/repositories';
 import { saveAudioBuffer } from '@/lib/audio/storage';
-import { CLONE_PREVIEW_MODEL, DEFAULT_TTS_MODEL } from '@/lib/audio/client/tts-options';
 import { logError } from '@/lib/logger';
-import { readStoredFileBufferForUser } from '@/lib/storage/server';
-import { toStoredFileDescriptor } from '@/lib/storage/repository';
+import { toAbsoluteFileUrl } from '@/lib/ai/shared/fileUrls';
+import { getPublicRequestOrigin } from '@/lib/request-origin';
+import { deleteStoredFile } from '@/lib/storage/server';
+import { findStoredFileByIdForUser, toStoredFileDescriptor } from '@/lib/storage/repository';
+import { isStoredFileReferenced } from '@/lib/storage/references';
 
-const VOICE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{6,254}[A-Za-z0-9]$/;
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-async function uploadStoredAudioToMiniMax(
-  storedFileId: string,
-  userId: string,
-  purpose: 'voice_clone' | 'prompt_audio',
-  filePrefix: string,
-  signal?: AbortSignal
-) {
-  const resolved = await readStoredFileBufferForUser(storedFileId, userId, 20 * 1024 * 1024);
-  if (resolved.file.category !== 'audio' || resolved.file.scope !== 'voice') {
-    throw new Error('音频文件不存在或无权访问');
-  }
-  const providerFileId = await uploadFile({
-    buffer: resolved.buffer,
-    filename: `${filePrefix}.${resolved.file.extension}`,
-    contentType: resolved.file.mimeType,
-    purpose,
-    signal,
-  });
-  return { providerFileId, storedFile: resolved.file };
+const SOURCE_MAX_BYTES = 10 * 1024 * 1024;
+const SOURCE_EXTENSIONS = new Set(['wav', 'mp3', 'm4a']);
+const DEFAULT_PREVIEW_TEXT = '这是一段测试音频，用于预览声音复刻效果。';
+
+function createVoicePrefix() {
+  return crypto.randomBytes(5).toString('hex');
+}
+
+function badRequest(message: string) {
+  return NextResponse.json({ success: false, message }, { status: 400 });
 }
 
 export async function POST(request: NextRequest) {
+  let createdVoiceId = '';
+  let previewFileId = '';
+  let userId = '';
+
   try {
     const session = await getSession(request);
 
@@ -41,107 +47,114 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+    userId = session.userId;
 
-    const body = await request.json();
-    const {
-      sourceFileId,
-      voiceId,
-      name,
-      description,
-      previewText,
-      language,
-      promptFileId,
-      promptText,
-    } = body;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return badRequest('请求内容格式不正确');
+    }
+    const { sourceFileId, name, description, previewText, language = 'zh' } = body;
 
-    if (!sourceFileId || !voiceId || !name) {
-      return NextResponse.json(
-        { success: false, message: '缺少必要参数' },
-        { status: 400 }
-      );
+    if (typeof sourceFileId !== 'string' || !sourceFileId.trim()) {
+      return badRequest('请选择声音样本');
     }
 
-    if (typeof sourceFileId !== 'string') {
-      return NextResponse.json(
-        { success: false, message: '无效的音频文件' },
-        { status: 400 }
-      );
+    if (typeof name !== 'string' || !name.trim()) {
+      return badRequest('请填写声音名称');
+    }
+    const normalizedName = name.trim();
+    if (normalizedName.length > 80) {
+      return badRequest('声音名称不能超过80个字符');
     }
 
-    if (typeof voiceId !== 'string' || !VOICE_ID_PATTERN.test(voiceId)) {
-      return NextResponse.json(
-        { success: false, message: '声音 ID 格式不正确' },
-        { status: 400 }
-      );
+    if (description !== undefined && typeof description !== 'string') {
+      return badRequest('声音描述格式不正确');
+    }
+    const normalizedDescription = typeof description === 'string' ? description.trim() : '';
+    if (normalizedDescription.length > 500) {
+      return badRequest('声音描述不能超过500个字符');
     }
 
-    const normalizedPromptFileId = typeof promptFileId === 'string' ? promptFileId.trim() : '';
-    const normalizedPromptText = typeof promptText === 'string' ? promptText.trim() : '';
-    const hasPrompt = Boolean(normalizedPromptFileId && normalizedPromptText);
+    if (previewText !== undefined && typeof previewText !== 'string') {
+      return badRequest('试听文字格式不正确');
+    }
+    const normalizedPreview = typeof previewText === 'string'
+      ? previewText.trim()
+      : DEFAULT_PREVIEW_TEXT;
+    if (normalizedPreview.length > 1000) {
+      return badRequest('试听文字不能超过1000个字符');
+    }
 
-    const sourceUpload = await uploadStoredAudioToMiniMax(
-      sourceFileId,
-      session.userId,
-      'voice_clone',
-      'clone-source',
-      request.signal
+    if (typeof language !== 'string') {
+      return badRequest('语言参数不正确');
+    }
+    const normalizedLanguage = language.trim().toLowerCase();
+    if (!QWEN_AUDIO_LANGUAGE_CODES.has(normalizedLanguage)) {
+      return badRequest('不支持该声音样本语言');
+    }
+
+    const sourceFile = await findStoredFileByIdForUser(sourceFileId.trim(), session.userId);
+    if (!sourceFile || sourceFile.category !== 'audio' || sourceFile.scope !== 'voice') {
+      return NextResponse.json(
+        { success: false, message: '声音样本不存在或无权访问' },
+        { status: 404 }
+      );
+    }
+    if (!SOURCE_EXTENSIONS.has(sourceFile.extension.toLowerCase())) {
+      return badRequest('声音样本仅支持 WAV、MP3、M4A 格式');
+    }
+    if (sourceFile.size <= 0 || sourceFile.size > SOURCE_MAX_BYTES) {
+      return badRequest('声音样本不能超过10MB');
+    }
+
+    const sourceDescriptor = toStoredFileDescriptor(sourceFile);
+    const sourcePublicUrl = toAbsoluteFileUrl(
+      sourceDescriptor.url,
+      getPublicRequestOrigin(request)
     );
-
-    let promptAudioId: string | undefined;
-    let promptStoredFile: typeof sourceUpload.storedFile | undefined;
-    if (hasPrompt) {
-      const promptUpload = await uploadStoredAudioToMiniMax(
-        normalizedPromptFileId,
-        session.userId,
-        'prompt_audio',
-        'clone-prompt',
-        request.signal
-      );
-      promptAudioId = promptUpload.providerFileId;
-      promptStoredFile = promptUpload.storedFile;
+    if (!sourcePublicUrl) {
+      throw new Error('无法生成声音样本的公开地址');
     }
 
-    const trimmedPreview = typeof previewText === 'string' ? previewText.trim() : '';
-    const cloneResult = await cloneVoice({
-      fileId: sourceUpload.providerFileId,
-      voiceId,
-      previewText: trimmedPreview || undefined,
-      model: trimmedPreview ? CLONE_PREVIEW_MODEL : undefined,
-      languageBoost: 'auto',
-      promptAudioId,
-      promptText: hasPrompt ? normalizedPromptText : undefined,
-      signal: request?.signal,
+    const cloneResult = await createCustomVoice({
+      sourceUrl: sourcePublicUrl,
+      prefix: createVoicePrefix(),
+      language: normalizedLanguage,
+      signal: request.signal,
     });
+    createdVoiceId = cloneResult.voiceId;
 
     let previewAudioUrl = '';
-    let previewFileId = '';
-    if (cloneResult.demoAudioUrl) {
-      const downloaded = await downloadRemoteFile(cloneResult.demoAudioUrl, request?.signal);
-      const saved = await saveAudioBuffer(
+    if (normalizedPreview) {
+      const preview = await synthesizeSpeech({
+        text: normalizedPreview,
+        voiceId: createdVoiceId,
+        language: normalizedLanguage,
+        audioFormat: 'mp3',
+        signal: request.signal,
+      });
+      const savedPreview = await saveAudioBuffer(
         session.userId,
-        downloaded.arrayBuffer,
+        preview.audioBuffer,
         'audio/mpeg',
         'voice-clone-preview'
       );
-      previewAudioUrl = saved.url;
-      previewFileId = saved.fileId;
+      previewAudioUrl = savedPreview.url;
+      previewFileId = savedPreview.fileId;
     }
 
     const insertedId = await VoiceRepository.create({
       userId: session.userId,
-      voiceId,
-      name,
-      description,
-      sourceFileId: sourceUpload.storedFile._id.toString(),
-      sourceAudioUrl: toStoredFileDescriptor(sourceUpload.storedFile).url,
-      promptFileId: promptStoredFile?._id.toString(),
-      promptAudioUrl: promptStoredFile ? toStoredFileDescriptor(promptStoredFile).url : undefined,
-      promptText: hasPrompt ? normalizedPromptText : undefined,
-      model: DEFAULT_TTS_MODEL,
-      provider: 'minimax',
+      voiceId: createdVoiceId,
+      name: normalizedName,
+      description: normalizedDescription || undefined,
+      sourceFileId: sourceFile._id.toString(),
+      sourceAudioUrl: sourceDescriptor.url,
+      model: QWEN_AUDIO_TTS_MODEL,
+      provider: 'bailian',
       previewAudioUrl: previewAudioUrl || undefined,
       previewFileId: previewFileId || undefined,
-      language: language || 'zh',
+      language: normalizedLanguage,
     });
 
     return NextResponse.json({
@@ -149,21 +162,38 @@ export async function POST(request: NextRequest) {
       message: '声音复刻成功',
       data: {
         id: insertedId.toString(),
+        voiceId: createdVoiceId,
         previewAudio: previewAudioUrl || undefined,
       },
     });
   } catch (error) {
-    const statusCode = (error as { statusCode?: number }).statusCode;
-    if (statusCode === 2038) {
-      return NextResponse.json(
-        { success: false, message: '当前账号未开通声音复刻权限，请先在 MiniMax 平台完成实名或企业认证' },
-        { status: 403 }
-      );
+    if (previewFileId && userId) {
+      await (async () => {
+        if (!await isStoredFileReferenced(previewFileId, userId)) {
+          await deleteStoredFile(previewFileId, userId);
+        }
+      })().catch((cleanupError) => {
+        logError('audio.voice-clone', 'remove failed preview', cleanupError);
+      });
+    }
+    if (createdVoiceId) {
+      await deleteCustomVoice(createdVoiceId).catch((cleanupError) => {
+        logError('audio.voice-clone', 'compensate provider voice', cleanupError, {
+          voiceId: createdVoiceId,
+        });
+      });
     }
 
     logError('audio.voice-clone', 'clone voice', error);
+    if (isBailianAudioError(error)) {
+      return NextResponse.json(
+        { success: false, message: error.message },
+        { status: error.status }
+      );
+    }
+
     return NextResponse.json(
-      { success: false, message: (error as Error).message || '声音复刻失败' },
+      { success: false, message: '声音复刻失败' },
       { status: 500 }
     );
   }

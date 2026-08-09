@@ -6,6 +6,7 @@ import {
   getModelConfig,
   isBailianChatModel,
   isPrimaryChatModelId,
+  modelSupportsAvailableInput,
 } from "@/lib/ai/shared/models";
 import {
   isNonEmptyString,
@@ -36,7 +37,6 @@ import {
   getChatCompletionChunkThoughtDelta,
   getChatCompletionCompletedUsage,
   getChatCompletionMessage,
-  getChatCompletionOutputText,
   getChatCompletionToolCalls,
   normalizeOpenAIError,
 } from "@/lib/ai/server/bailian/openai";
@@ -67,6 +67,22 @@ function buildChatProviderState({ completionId, usage }) {
   if (usage && typeof usage === "object" && !Array.isArray(usage)) state.usage = usage;
   if (Object.keys(state).length === 0) return undefined;
   return { bailianChatCompletions: state };
+}
+
+function assertMessageInputsSupported(messages, model) {
+  for (const message of Array.isArray(messages) ? messages : []) {
+    for (const part of Array.isArray(message?.parts) ? message.parts : []) {
+      if (part?.inlineData && !modelSupportsAvailableInput(model, "image")) {
+        throw new Error("当前模型不支持历史消息中的图片");
+      }
+      if (part?.fileData) {
+        const inputType = getAttachmentInputType(part.fileData.category);
+        if (!inputType || !modelSupportsAvailableInput(model, inputType)) {
+          throw new Error("当前模型不支持历史消息中的附件");
+        }
+      }
+    }
+  }
 }
 
 export async function POST(req) {
@@ -157,8 +173,9 @@ export async function POST(req) {
     let currentImages = [];
     try {
       trustedHistory = await resolveMessagesWithStoredFiles(sanitizeStoredMessagesStrict(history), user.userId);
+      assertMessageInputsSupported(trustedHistory, model);
       const requestedAttachments = Array.isArray(config?.attachments)
-        ? config.attachments.filter((item) => getAttachmentInputType(item?.category) === "file")
+        ? config.attachments
         : [];
       const requestedImages = Array.isArray(config?.images) ? config.images : [];
       currentAttachments = requestedAttachments.length
@@ -167,11 +184,22 @@ export async function POST(req) {
       currentImages = requestedImages.length
         ? await resolveStoredFileDescriptorsForUser(requestedImages, user.userId)
         : [];
-      if (currentAttachments.some((item) => getAttachmentInputType(item.category) !== "file")) {
-        throw new Error("文档附件类型无效");
+      if (currentAttachments.some((item) => !["file", "video"].includes(getAttachmentInputType(item.category)))) {
+        throw new Error("附件类型无效");
       }
       if (currentImages.some((item) => item.category !== "image")) {
         throw new Error("图片附件类型无效");
+      }
+      if (currentImages.length > 0 && !modelSupportsAvailableInput(model, "image")) {
+        throw new Error("当前模型不支持图片");
+      }
+      if (
+        currentAttachments.some((item) => {
+          const inputType = getAttachmentInputType(item.category);
+          return !modelSupportsAvailableInput(model, inputType);
+        })
+      ) {
+        throw new Error("当前模型不支持这类附件");
       }
     } catch (error) {
       return Response.json({ error: error?.message || "附件无效" }, { status: 400 });
@@ -205,6 +233,7 @@ export async function POST(req) {
         return Response.json({ error: e?.message || "messages invalid" }, { status: 400 });
       }
       sanitized = await resolveMessagesWithStoredFiles(sanitized, user.userId);
+      assertMessageInputsSupported(sanitized, model);
       const regenerateTime = new Date();
       const conv = await Conversation.findOneAndUpdate(
         { _id: currentConversationId, userId: user.userId },
@@ -257,13 +286,20 @@ export async function POST(req) {
     let attachmentEntries = [];
     if (!isRegenerateMode) {
       let fileTextMap = new Map();
-      if (currentAttachments.length > 0) {
+      const currentDocumentAttachments = currentAttachments.filter(
+        (item) => getAttachmentInputType(item.category) === "file"
+      );
+      const currentVideoAttachments = currentAttachments.filter(
+        (item) => getAttachmentInputType(item.category) === "video"
+      );
+      if (currentDocumentAttachments.length > 0) {
         fileTextMap = await prepareDocumentAttachmentMapByFiles(
-          currentAttachments,
+          currentDocumentAttachments,
           { userId: user.userId, conversationId: currentConversationId, signal: req?.signal }
         );
-        attachmentEntries = currentAttachments.filter((item) => fileTextMap.has(item.url));
+        attachmentEntries = currentDocumentAttachments.filter((item) => fileTextMap.has(item.url));
       }
+      attachmentEntries.push(...currentVideoAttachments);
       dbImageEntries = currentImages;
 
       const currentContent = await buildCurrentUserMessage({
@@ -365,20 +401,19 @@ export async function POST(req) {
           });
 
           let responseMessages = chatMessages;
-          let terminalResponse = null;
 
           if (webSearchConfig.enabled) {
             responseMessages = [...chatMessages];
             let toolCallsUsed = 0;
 
-            while (toolCallsUsed < 5 && !terminalResponse) {
+            while (toolCallsUsed < 5) {
               const toolResponse = await openAIClient.chat.completions.create(
                 buildChatCompletionsRequest({
                   model: apiModel,
                   messages: responseMessages,
                   system: systemPrompt,
                   stream: false,
-                  reasoningEffort: "high",
+                  reasoningEffort: "medium",
                   tools: FIRECRAWL_CHAT_TOOLS,
                   toolChoice: "auto",
                 }),
@@ -404,7 +439,6 @@ export async function POST(req) {
               }
 
               if (calls.length === 0) {
-                terminalResponse = toolResponse;
                 break;
               }
 
@@ -492,49 +526,41 @@ export async function POST(req) {
             }
           }
 
-          if (terminalResponse) {
-            const answer = getChatCompletionOutputText(terminalResponse);
-            if (!answer) {
-              throw new Error("模型完成联网后没有返回答案");
+          finalCompletionId = "";
+          finalUsage = null;
+          const stream = await openAIClient.chat.completions.create(
+            buildChatCompletionsRequest({
+              model: apiModel,
+              messages: responseMessages,
+              system: systemPrompt,
+              stream: true,
+            }),
+            { signal: req?.signal }
+          );
+
+          for await (const chunk of stream) {
+            if (clientAborted) break;
+
+            if (typeof chunk?.id === "string" && chunk.id.trim()) {
+              finalCompletionId = chunk.id.trim();
             }
-            fullText += answer;
-            sendEvent({ type: "text", content: answer });
-          } else {
-            const stream = await openAIClient.chat.completions.create(
-              buildChatCompletionsRequest({
-                model: apiModel,
-                messages: responseMessages,
-                system: systemPrompt,
-                stream: true,
-                reasoningEffort: "high",
-              }),
-              { signal: req?.signal }
-            );
 
-            for await (const chunk of stream) {
-              if (clientAborted) break;
+            const delta = getChatCompletionChunkDelta(chunk);
+            const textDelta = typeof delta?.content === "string" ? delta.content : "";
+            if (textDelta) {
+              fullText += textDelta;
+              sendEvent({ type: "text", content: textDelta });
+            }
 
-              if (typeof chunk?.id === "string" && chunk.id.trim()) {
-                finalCompletionId = chunk.id.trim();
-              }
+            const thoughtDelta = getChatCompletionChunkThoughtDelta(chunk);
+            if (thoughtDelta) {
+              fullThought += thoughtDelta;
+              sendEvent({ type: "thought", content: thoughtDelta });
+            }
 
-              const delta = getChatCompletionChunkDelta(chunk);
-              const textDelta = typeof delta?.content === "string" ? delta.content : "";
-              if (textDelta) {
-                fullText += textDelta;
-                sendEvent({ type: "text", content: textDelta });
-              }
-
-              const thoughtDelta = getChatCompletionChunkThoughtDelta(chunk);
-              if (thoughtDelta) {
-                fullThought += thoughtDelta;
-                sendEvent({ type: "thought", content: thoughtDelta });
-              }
-
-              const usage = getChatCompletionCompletedUsage(chunk);
-              if (usage) {
-                finalUsage = usage;
-              }
+            const usage = getChatCompletionCompletedUsage(chunk);
+            if (usage) {
+              finalUsage = usage;
             }
           }
 

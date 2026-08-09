@@ -11,4 +11,7 @@ export async function register() {
     getDb().then((db) => db.command({ ping: 1 })),
     ensureStorageReady(),
   ]);
+
+  const { runRequiredStartupMigrations } = await import("@/lib/migrations/requiredStartupMigrations");
+  await runRequiredStartupMigrations();
 }

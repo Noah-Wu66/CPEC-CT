@@ -1,15 +1,10 @@
-export const AUDIO_LANGUAGE_LABELS: Record<string, string> = {
-  zh: "中文",
-  en: "English",
-  ja: "日本語",
-  ko: "한국어",
-  es: "Español",
-  fr: "Français",
-  de: "Deutsch",
-  ru: "Русский"
-};
+import { LANGUAGES } from '@/lib/audio/client/tts-options';
 
-export const AUDIO_LANGUAGE_OPTIONS = Object.entries(AUDIO_LANGUAGE_LABELS).map(([code, name]) => ({ code, name }));
+export const AUDIO_LANGUAGE_OPTIONS = LANGUAGES.filter((language) => language.code !== 'auto');
+
+export const AUDIO_LANGUAGE_LABELS: Readonly<Record<string, string>> = Object.fromEntries(
+  LANGUAGES.map((language) => [language.code, language.name])
+);
 
 export function getAudioExtension(audioUrl: string) {
   try {

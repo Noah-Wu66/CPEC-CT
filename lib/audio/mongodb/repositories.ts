@@ -35,19 +35,29 @@ export class VoiceRepository {
       .toArray();
   }
 
-  static async findById(id: string) {
+  static async findOwnedById(id: string, userId: string) {
     const collection = await this.getCollection();
+    const ownerId = new ObjectId(userId);
 
     if (isValidObjectId(id)) {
-      return await collection.findOne({ _id: new ObjectId(id) });
-    } else {
-      return await collection.findOne({ voiceId: id });
+      return await collection.findOne({
+        _id: new ObjectId(id),
+        userId: ownerId,
+      });
     }
+
+    return await collection.findOne({
+      voiceId: id,
+      userId: ownerId,
+    });
   }
 
-  static async findByVoiceId(voiceId: string) {
+  static async findOwnedByVoiceId(voiceId: string, userId: string) {
     const collection = await this.getCollection();
-    return await collection.findOne({ voiceId });
+    return await collection.findOne({
+      voiceId,
+      userId: new ObjectId(userId),
+    });
   }
 
   static async create(voice: Omit<Voice, '_id' | 'createdAt' | 'updatedAt'>) {
@@ -60,14 +70,6 @@ export class VoiceRepository {
       updatedAt: now,
     });
     return result.insertedId;
-  }
-
-  static async update(id: string, updates: Partial<Voice>) {
-    const collection = await this.getCollection();
-    await collection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { ...updates, updatedAt: new Date() } }
-    );
   }
 
   static async delete(id: string, userId: string) {
@@ -85,21 +87,6 @@ export class VoiceRepository {
     });
   }
 
-  static async isFileReferenced(fileId: string, userId: string) {
-    const collection = await this.getCollection();
-    const reference = await collection.findOne(
-      {
-        userId: new ObjectId(userId),
-        $or: [
-          { sourceFileId: fileId },
-          { promptFileId: fileId },
-          { previewFileId: fileId },
-        ],
-      },
-      { projection: { _id: 1 } }
-    );
-    return Boolean(reference);
-  }
 }
 
 export class TTSHistoryRepository {

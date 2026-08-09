@@ -293,7 +293,18 @@ export default function Composer({
       setSelectedAttachments((prev) =>
         prev.map((item) =>
           item.id === att.id
-            ? { ...item, uploadStatus: "ready", fileUrl: storedFile.url, fileId: storedFile.fileId, uploadProgress: 100 }
+            ? {
+              ...item,
+              uploadStatus: "ready",
+              fileUrl: storedFile.url,
+              fileId: storedFile.fileId,
+              name: storedFile.name,
+              mimeType: storedFile.mimeType,
+              size: storedFile.size,
+              extension: storedFile.extension,
+              category: storedFile.category,
+              uploadProgress: 100,
+            }
             : item
         )
       );

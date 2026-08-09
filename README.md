@@ -26,13 +26,12 @@ Volume 直接挂载到应用服务，本项目应保持 **1 个运行实例**。
 | 模块 | 路径 | 能力 |
 | --- | --- | --- |
 | 人工智能 | `/ai` | 多模型对话、附件理解、联网搜索、图片和视频生成 |
-| 语音合成 | `/speech` | MiniMax 文本转语音、声音复刻、声音库与生成历史 |
+| 语音合成 | `/speech` | Qwen Audio 文本转语音、声音复刻、声音库与生成历史 |
 | 录音识别 | `/transcribe` | Fun-ASR 录音转写、字幕识别、字幕翻译与历史记录 |
 
 当前服务接入：
 
-- **阿里云百炼新加坡端点**：Qwen3.7-Max、DeepSeek V4 Pro、Kimi K2.6、GLM 5.2、Qwen-Image 3.0 Pro、HappyHorse 1.1、Fun-ASR。
-- **MiniMax**：Speech 2.8 / 2.6 语音合成和声音复刻。
+- **阿里云百炼新加坡端点**：Qwen3.8-Max、DeepSeek V4 Pro、Kimi K2.6、GLM 5.2、Qwen-Image 3.0 Pro、HappyHorse 1.1、Qwen Audio 3.0 TTS Plus、Fun-ASR。
 - **Firecrawl**：AI 对话联网搜索和网页正文读取。
 
 ## 技术栈
@@ -77,24 +76,26 @@ Volume 直接挂载到应用服务，本项目应保持 **1 个运行实例**。
 
 ```dotenv
 MONGO_URI=MongoDB 服务提供的完整连接地址，并在地址中指定数据库名
-DASHSCOPE_API_KEY=阿里云百炼 API Key
-MINIMAX_API_KEY=MiniMax API Key
+DASHSCOPE_API_KEY=阿里云百炼新加坡工作空间的标准按量付费 API Key
 FIRECRAWL_API_KEY=Firecrawl API Key
 ```
 
-所有变量都是必填项。应用启动时会检查变量格式、MongoDB 连接、数据库索引和 Volume 写入权限；任何一项不合格都会直接停止启动，避免带病运行。
+所有变量都是必填项。请勿使用仅面向交互式工具的 Token Plan Key。应用启动时会检查变量格式、MongoDB 连接、数据库索引、Volume 写入权限和必要的数据迁移；任何一项不合格都会直接停止启动，避免带病运行。
+
+从 Qwen3.7 / MiniMax 版本升级时，新版本首次启动会执行一次性清理：删除全部 Qwen3.7 会话、旧克隆音色记录及其未被其他功能引用的本地文件，已经生成的 TTS 历史音频会保留。升级前必须备份 MongoDB 与 Volume，并在单实例维护窗口内完成部署；迁移没有完成时 `/api/ready` 会返回 `503`。
 
 ### 5. 部署与检查
 
 部署完成后检查：
 
 - `https://example.com/api/health` 返回 `200`：应用进程正常。
-- `https://example.com/api/ready` 返回 `200`：MongoDB、索引和 Volume 均可用。
+- `https://example.com/api/ready` 返回 `200`：MongoDB、索引、Volume 和必要的数据迁移均已就绪。
 - 首位注册用户成为管理员，之后注册的用户为普通用户。
 
 ## 文件系统规则
 
-- 普通聊天附件、图片和文档最大 `20 MB`。
+- 普通聊天图片、视频和文档最大 `20 MB`。
+- 声音复刻样本支持 WAV、MP3、M4A，最大 `10 MB`，时长 `5～60 秒`。
 - 录音识别源文件最大 `500 MB`。
 - 上传过程采用流式写入，先保存到 `.incoming` 临时区，校验大小、扩展名、MIME 和文件头后再原子移动到正式目录。
 - 文件正文保存在 Volume，MongoDB 只保存所有者、用途、大小、哈希、解析状态和公开文件编号。
@@ -107,10 +108,10 @@ FIRECRAWL_API_KEY=Firecrawl API Key
 正式开放前必须在 Zeabur 预发布环境完成：
 
 1. 注册、登录、退出和首次管理员身份检查。
-2. AI 对话、联网搜索、图片附件、文档附件及文档解析检查。
+2. AI 对话、联网搜索、图片问答、视频问答与追问、文档问答及文档解析检查。
 3. 文生图、参考图生成、文生视频和图生视频检查。
-4. MiniMax 语音合成、声音复刻、音频试听与历史删除检查。
-5. Fun-ASR 录音识别、字幕下载、翻译和历史删除检查。
+4. 使用 20 个精选音色逐一检查 Qwen Audio 3.0 TTS Plus 的中英文、MP3/WAV、声音复刻、试听、历史播放下载和云端及本地删除。
+5. Fun-ASR 录音识别、字幕下载、Qwen3.8-Max 字幕翻译和历史删除检查。
 6. 上传一个接近 `500 MB` 的真实音频，确认入口网关、上传进度、识别提交和持久化都成功。
 7. 重启并重新部署应用，确认历史文件仍可读取，以验证 Volume 确实挂载。
 8. 为 MongoDB 和 Volume 启用备份，并实际验证一次恢复流程。
@@ -120,7 +121,7 @@ FIRECRAWL_API_KEY=Firecrawl API Key
 ## 健康检查与日志
 
 - `/api/health`：轻量存活检查，供 Zeabur 判断应用进程是否正常。
-- `/api/ready`：依赖就绪检查，会验证 MongoDB 与 Volume。
+- `/api/ready`：依赖就绪检查，会验证 MongoDB、Volume 与必要的数据迁移。
 - 服务端错误日志采用单行 JSON，便于在 Zeabur 日志页面按模块、动作和请求编号定位问题。
 
 ## 目录结构

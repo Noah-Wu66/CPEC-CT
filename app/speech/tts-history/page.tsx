@@ -13,6 +13,8 @@ import { Slider } from '@/components/ui/slider';
 import { useConfirm } from '@/components/ui/confirm-provider';
 import { ListCardsLoading } from '@/components/layout/route-loading';
 import type { VoiceItem } from '@/types/audio/tts';
+import { getSystemVoiceName } from '@/lib/audio/client/system-voices';
+import { formatTtsModelName } from '@/lib/audio/client/tts-options';
 
 interface TtsHistoryItem {
   id: string;
@@ -72,8 +74,11 @@ export default function TTSHistoryPage() {
 
   const getVoiceName = (voiceId: string) => {
     const voice = voices.find(v => v.voiceId === voiceId);
-    if (!voice) return voiceId || '未知声音';
-    return voice.language ? `${voice.name} · ${formatAudioLanguage(voice.language)}` : voice.name;
+    if (voice) {
+      return voice.language ? `${voice.name} · ${formatAudioLanguage(voice.language)}` : voice.name;
+    }
+
+    return getSystemVoiceName(voiceId) || voiceId || '未知声音';
   };
 
   useEffect(() => {
@@ -228,7 +233,7 @@ export default function TTSHistoryPage() {
       </div>
 
       {error && (
-        <div className="alert-danger">
+        <div className="alert-danger" role="alert">
           {error}
         </div>
       )}
@@ -265,6 +270,7 @@ export default function TTSHistoryPage() {
                       variant="outline"
                       size="icon"
                       disabled={playingId !== null && playingId !== item.id}
+                      aria-label={playingId === item.id && !isPaused ? '暂停' : '播放'}
                     >
                       {playingId === item.id && !isPaused ? (
                         <Pause className="h-4 w-4" />
@@ -276,6 +282,7 @@ export default function TTSHistoryPage() {
                       onClick={() => handleDownload(item.audioUrl, item.text)}
                       variant="outline"
                       size="icon"
+                      aria-label="下载音频"
                     >
                       <Download className="h-4 w-4" />
                     </Button>
@@ -284,6 +291,7 @@ export default function TTSHistoryPage() {
                       variant="outline"
                       size="icon"
                       className="text-destructive hover:text-destructive"
+                      aria-label="删除记录"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -316,7 +324,7 @@ export default function TTSHistoryPage() {
                   <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
                     <div className="rounded-lg bg-secondary/50 p-3">
                       <span className="text-muted-foreground">模型</span>
-                      <p className="break-words font-medium">{item.model}</p>
+                      <p className="break-words font-medium">{formatTtsModelName(item.model)}</p>
                     </div>
                     <div className="rounded-lg bg-secondary/50 p-3">
                       <span className="text-muted-foreground">声音名称</span>
@@ -324,7 +332,9 @@ export default function TTSHistoryPage() {
                     </div>
                     <div className="rounded-lg bg-secondary/50 p-3">
                       <span className="text-muted-foreground">语言</span>
-                      <p className="font-medium">{String(item.parameters?.languageType || 'auto')}</p>
+                      <p className="font-medium">
+                        {formatAudioLanguage(String(item.parameters?.languageType || 'auto'))}
+                      </p>
                     </div>
                   </div>
                 </div>

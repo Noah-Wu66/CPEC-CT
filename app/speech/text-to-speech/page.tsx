@@ -43,14 +43,13 @@ export default function TextToSpeechPage() {
   }, []);
 
   const persistHistory = (
-    form: { voiceId: string; text: string; model: string; languageType: string },
+    form: { voiceId: string; text: string; languageType: string },
     audioFileId: string
   ) => {
     return saveTtsHistory({
       voiceId: form.voiceId,
       text: form.text,
       audioFileId,
-      model: form.model,
       languageType: form.languageType,
     });
   };

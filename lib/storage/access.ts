@@ -75,8 +75,8 @@ export async function resolveMessagesWithStoredFiles<T>(messages: T[], userId: s
         if (currentPart.fileData) {
           const fileId = normalizeFileId(currentPart.fileData.fileId);
           const descriptor = fileId ? descriptorMap.get(fileId) : null;
-          if (!descriptor || !["text", "code", "document", "spreadsheet", "data"].includes(descriptor.category)) {
-            throw new Error("消息引用的文档不存在或无权访问");
+          if (!descriptor || !["video", "text", "code", "document", "spreadsheet", "data"].includes(descriptor.category)) {
+            throw new Error("消息引用的附件不存在或无权访问");
           }
           nextPart.fileData = { ...descriptor };
         }

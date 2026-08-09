@@ -1,10 +1,9 @@
 import type { SyncTTSFormState, VoiceItem } from "@/types/audio/tts";
-import { DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from "@/lib/audio/client/tts-options";
+import { DEFAULT_TTS_VOICE } from "@/lib/audio/client/tts-options";
 
 export const DEFAULT_SYNC_TTS_FORM: SyncTTSFormState = {
   text: "",
   voiceId: DEFAULT_TTS_VOICE,
-  model: DEFAULT_TTS_MODEL,
   languageType: "auto",
   audioFormat: "mp3",
 };
@@ -31,7 +30,6 @@ export async function generateSyncTts(form: SyncTTSFormState) {
     body: JSON.stringify({
       text: form.text,
       voiceId: form.voiceId || DEFAULT_TTS_VOICE,
-      model: form.model,
       languageType: form.languageType,
       audioFormat: form.audioFormat,
     })
@@ -55,7 +53,6 @@ export async function saveTtsHistory(input: {
   voiceId: string;
   text: string;
   audioFileId: string;
-  model: string;
   languageType: string;
 }) {
   const response = await fetch("/api/audio/tts/history/save", {
@@ -65,7 +62,6 @@ export async function saveTtsHistory(input: {
       voiceId: input.voiceId || DEFAULT_TTS_VOICE,
       text: input.text,
       audioFileId: input.audioFileId,
-      model: input.model,
       parameters: {
         languageType: input.languageType,
       },

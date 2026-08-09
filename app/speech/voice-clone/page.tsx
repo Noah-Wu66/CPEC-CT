@@ -18,22 +18,13 @@ export default function VoiceClonePage() {
   const [success, setSuccess] = useState('');
 
   const [sourceFile, setSourceFile] = useState<StoredFileDescriptor>();
-  const [promptFile, setPromptFile] = useState<StoredFileDescriptor>();
 
-  const generateVoiceId = () => {
-    const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substring(2, 8);
-    return `voice${timestamp}${random}`;
-  };
-
-  const [formData, setFormData] = useState(() => ({
-    voiceId: generateVoiceId(),
+  const [formData, setFormData] = useState({
     name: '',
     description: '',
     previewText: '这是一段测试音频，用于预览克隆效果。',
     language: 'zh',
-    promptText: '',
-  }));
+  });
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -45,13 +36,8 @@ export default function VoiceClonePage() {
       return;
     }
 
-    if (!formData.name) {
+    if (!formData.name.trim()) {
       setError('请填写声音名称');
-      return;
-    }
-
-    if (promptFile && !formData.promptText.trim()) {
-      setError('请填写示例音频对应的文本');
       return;
     }
 
@@ -63,14 +49,10 @@ export default function VoiceClonePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sourceFileId: sourceFile.fileId,
-          voiceId: formData.voiceId,
-          name: formData.name,
-          description: formData.description,
-          previewText: formData.previewText,
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          previewText: formData.previewText.trim(),
           language: formData.language,
-          ...(promptFile && formData.promptText.trim()
-            ? { promptFileId: promptFile.fileId, promptText: formData.promptText.trim() }
-            : {}),
         }),
       });
 
@@ -96,13 +78,13 @@ export default function VoiceClonePage() {
     <div className="mx-auto max-w-5xl space-y-6">
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && (
-          <div className="alert-danger">
+          <div className="alert-danger" role="alert">
             {error}
           </div>
         )}
 
         {success && (
-          <div className="success-text">
+          <div className="success-text" role="status">
             {success}
           </div>
         )}
@@ -114,38 +96,20 @@ export default function VoiceClonePage() {
               上传音频文件
             </CardTitle>
             <CardDescription>
-              上传源音频文件（10秒-5分钟），克隆出的声音若 7 天内未使用将自动失效
+              上传 5～60 秒的清晰单人语音，推荐使用 10～20 秒样本
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <FileUploader
               label="源音频文件 *"
-              description="10秒-5分钟，用于克隆的主要音频样本"
+              description="请使用正常语速，无背景音乐、环境噪音或其他说话人的音频"
+              accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/wav"
+              maxSize={10 * 1024 * 1024}
+              minDuration={5}
+              maxDuration={60}
               onUploadComplete={setSourceFile}
               onRemove={() => setSourceFile(undefined)}
             />
-
-            <FileUploader
-              label="示例音频（选填）"
-              description="小于 8 秒的清晰示例，可提升克隆相似度与稳定性"
-              onUploadComplete={setPromptFile}
-              onRemove={() => {
-                setPromptFile(undefined);
-                setFormData((prev) => ({ ...prev, promptText: '' }));
-              }}
-            />
-
-            {promptFile && (
-              <div className="space-y-2">
-                <Label htmlFor="promptText">示例音频对应文本 *</Label>
-                <Input
-                  id="promptText"
-                  placeholder="请输入与示例音频内容完全一致的文本"
-                  value={formData.promptText}
-                  onChange={(e) => setFormData({ ...formData, promptText: e.target.value })}
-                />
-              </div>
-            )}
           </CardContent>
         </Card>
 
@@ -162,6 +126,7 @@ export default function VoiceClonePage() {
               <Input
                 id="name"
                 placeholder="我的声音"
+                maxLength={50}
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 required
@@ -173,6 +138,7 @@ export default function VoiceClonePage() {
               <Input
                 id="description"
                 placeholder="简要描述这个声音的特点"
+                maxLength={200}
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               />
@@ -184,7 +150,7 @@ export default function VoiceClonePage() {
                 id="language"
                 value={formData.language}
                 onChange={(e) => setFormData({ ...formData, language: e.target.value })}
-                className="flex h-10 w-full px-3 py-2 text-sm"
+                className="flex h-10 w-full rounded-lg border border-[var(--oa-control-border)] bg-[var(--oa-control-bg)] px-3 py-2 text-sm text-[var(--oa-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {AUDIO_LANGUAGE_OPTIONS.map(lang => (
                   <option key={lang.code} value={lang.code}>{lang.name}</option>
@@ -196,6 +162,7 @@ export default function VoiceClonePage() {
               <Label htmlFor="previewText">预览文本</Label>
               <Input
                 id="previewText"
+                maxLength={200}
                 value={formData.previewText}
                 onChange={(e) => setFormData({ ...formData, previewText: e.target.value })}
               />

@@ -107,7 +107,11 @@ export async function POST(request: NextRequest) {
     if (!supported) return problem("当前模式不支持这类文件", 422, "MODEL_FILE_UNSUPPORTED", requestId);
   }
 
-  const maxBytes = scope === "audio-source" ? 500 * 1024 * 1024 : 20 * 1024 * 1024;
+  const maxBytes = scope === "audio-source"
+    ? 500 * 1024 * 1024
+    : scope === "voice"
+      ? 10 * 1024 * 1024
+      : 20 * 1024 * 1024;
   const contentLengthHeader = request.headers.get("content-length");
   const contentLength = contentLengthHeader === null ? undefined : Number(contentLengthHeader);
   if (Number.isFinite(contentLength) && Number(contentLength) > maxBytes) {

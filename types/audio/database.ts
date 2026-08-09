@@ -8,11 +8,8 @@ export interface Voice {
   description?: string;
   sourceFileId: string;
   sourceAudioUrl: string;
-  promptFileId?: string;
-  promptAudioUrl?: string;
-  promptText?: string;
   model: string;
-  provider?: 'minimax';
+  provider: 'bailian';
   previewAudioUrl?: string;
   previewFileId?: string;
   language: string;

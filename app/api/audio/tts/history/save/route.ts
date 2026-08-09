@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/audio/auth/session';
 import { TTSHistoryRepository } from '@/lib/audio/mongodb/repositories';
-import { DEFAULT_TTS_VOICE } from '@/lib/audio/client/tts-options';
+import { DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from '@/lib/audio/client/tts-options';
+import { QWEN_AUDIO_LANGUAGE_CODES } from '@/lib/audio/bailian/tts';
 import { logError } from '@/lib/logger';
 import { findStoredFileByIdForUser, toStoredFileDescriptor } from '@/lib/storage/repository';
 
@@ -16,12 +17,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { voiceId, text, audioFileId, model, parameters } = body;
-
-    if (!text || !audioFileId || !model) {
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return NextResponse.json(
-        { success: false, message: '缺少必要参数' },
+        { success: false, message: '请求内容格式不正确' },
+        { status: 400 }
+      );
+    }
+    const { voiceId, text, audioFileId, parameters } = body;
+
+    if (
+      typeof text !== 'string'
+      || !text.trim()
+      || text.length > 10000
+      || typeof audioFileId !== 'string'
+      || !audioFileId.trim()
+      || (voiceId !== undefined && (typeof voiceId !== 'string' || !voiceId.trim() || voiceId.length > 256))
+      || (parameters !== undefined && (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)))
+    ) {
+      return NextResponse.json(
+        { success: false, message: '历史记录参数不正确' },
+        { status: 400 }
+      );
+    }
+
+    const languageType = parameters && typeof parameters.languageType === 'string'
+      ? parameters.languageType.trim()
+      : 'auto';
+    if (languageType !== 'auto' && !QWEN_AUDIO_LANGUAGE_CODES.has(languageType)) {
+      return NextResponse.json(
+        { success: false, message: '语言参数不正确' },
         { status: 400 }
       );
     }
@@ -37,12 +62,12 @@ export async function POST(request: NextRequest) {
 
     await TTSHistoryRepository.create({
       userId: session.userId,
-      voiceId: voiceId || DEFAULT_TTS_VOICE,
+      voiceId: typeof voiceId === 'string' ? voiceId.trim() : DEFAULT_TTS_VOICE,
       text,
       audioFileId: audioDescriptor.fileId,
       audioUrl: audioDescriptor.url,
-      model,
-      parameters: parameters || {},
+      model: DEFAULT_TTS_MODEL,
+      parameters: { languageType },
     });
 
     return NextResponse.json({

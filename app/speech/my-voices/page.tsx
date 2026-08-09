@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { useConfirm } from '@/components/ui/confirm-provider';
 import { GridCardsLoading } from '@/components/layout/route-loading';
 import type { VoiceItem } from '@/types/audio/tts';
+import { formatTtsModelName } from '@/lib/audio/client/tts-options';
 
 const DEFAULT_PREVIEW_TEXT = '这是一段测试音频，用于预览声音效果。';
 
@@ -23,7 +24,7 @@ function VoiceCard({
 }: {
   voice: VoiceItem;
   playingVoice: string | null;
-  onPlay: (id: string, voiceId: string, model: string, text: string) => void;
+  onPlay: (id: string, voiceId: string, text: string) => void;
   onDelete: (voiceId: string) => void;
 }) {
   const [previewText, setPreviewText] = useState(DEFAULT_PREVIEW_TEXT);
@@ -48,7 +49,7 @@ function VoiceCard({
           </div>
           <div className="flex flex-col gap-1 text-sm sm:flex-row sm:justify-between">
             <span className="text-muted-foreground">模型</span>
-            <span className="min-w-0 break-all sm:text-right">{voice.model}</span>
+            <span className="min-w-0 break-all sm:text-right">{formatTtsModelName(voice.model)}</span>
           </div>
           <div className="flex flex-col gap-1 text-sm sm:flex-row sm:justify-between">
             <span className="text-muted-foreground">创建时间</span>
@@ -57,9 +58,11 @@ function VoiceCard({
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">预览文本</label>
+          <label htmlFor={`preview-${voice.id}`} className="text-sm font-medium">预览文本</label>
           <Input
+            id={`preview-${voice.id}`}
             type="text"
+            maxLength={200}
             value={previewText}
             onChange={(e) => setPreviewText(e.target.value)}
           />
@@ -67,10 +70,10 @@ function VoiceCard({
 
         <div className="mt-auto flex gap-2">
           <Button
-            onClick={() => onPlay(voice.id, voice.voiceId, voice.model, previewText)}
+            onClick={() => onPlay(voice.id, voice.voiceId, previewText.trim())}
             variant="outline"
             className="flex-1"
-            disabled={playingVoice !== null && playingVoice !== voice.id}
+            disabled={!previewText.trim() || (playingVoice !== null && playingVoice !== voice.id)}
           >
             <Play className="mr-2 h-4 w-4" />
             试听
@@ -138,7 +141,7 @@ export default function MyVoicesPage() {
     }
   };
 
-  const handlePlay = async (id: string, voiceId: string, model: string, text: string) => {
+  const handlePlay = async (id: string, voiceId: string, text: string) => {
     if (playingVoice === id) {
       stopCurrentAudio();
       setPlayingVoice(null);
@@ -156,7 +159,6 @@ export default function MyVoicesPage() {
         body: JSON.stringify({
           text,
           voiceId,
-          model,
         }),
       });
 
@@ -243,7 +245,7 @@ export default function MyVoicesPage() {
       </div>
 
       {error && (
-        <div className="alert-danger">
+        <div className="alert-danger" role="alert">
           {error}
         </div>
       )}

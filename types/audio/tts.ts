@@ -13,7 +13,6 @@ export interface VoiceItem {
 export interface SyncTTSFormState {
   text: string;
   voiceId: string;
-  model: string;
   languageType: string;
   audioFormat: SyncAudioFormat;
 }
